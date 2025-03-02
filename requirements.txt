@@ -1,3 +1,4 @@
+plotly
 nselib
 pandas_market_calendars
 statsmodels
