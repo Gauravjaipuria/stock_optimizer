@@ -81,9 +81,8 @@ for stock in selected_stocks:
 
 # Portfolio Optimization
 if forecasted_prices:
-    risk_allocation = {1: 0.7, 2: 0.5, 3: 0.3}
+    risk_allocation = {1: 0.7, 2: 0.5, 3: 0.3}  # Low Risk: 70% Safe, Medium: 50%, High: 30%
     
-    # Allocate investment proportionally based on risk
     allocation = {}
     safe_stocks = []
     risky_stocks = []
@@ -93,27 +92,31 @@ if forecasted_prices:
             risky_stocks.append(stock)
         else:
             safe_stocks.append(stock)
-    
+
+    # Investment split based on risk profile
     risky_allocation = investment_amount * risk_allocation[risk_profile]
     safe_allocation = investment_amount - risky_allocation
 
+    # Distribute investment
     if risky_stocks:
+        per_risky_stock = risky_allocation / len(risky_stocks)
         for stock in risky_stocks:
-            allocation[stock] = risky_allocation / len(risky_stocks)
+            allocation[stock] = per_risky_stock
     
     if safe_stocks:
+        per_safe_stock = safe_allocation / len(safe_stocks)
         for stock in safe_stocks:
-            allocation[stock] = safe_allocation / len(safe_stocks)
+            allocation[stock] = per_safe_stock
 
+    # Ensure total allocation sums to 100%
     total_allocation = sum(allocation.values())
     allocation_percentage = {stock: (amount / total_allocation) * 100 for stock, amount in allocation.items()}
 
-    # Ensure Percentage Sums to 100%
+    # Adjust first stock to correct rounding errors
     total_percentage = sum(allocation_percentage.values())
     if total_percentage != 100:
-        difference = 100 - total_percentage
         first_stock = next(iter(allocation_percentage))
-        allocation_percentage[first_stock] += difference
+        allocation_percentage[first_stock] += 100 - total_percentage
 
     # Display Optimized Stock Allocation
     st.subheader("💰 Optimized Stock Allocation")
