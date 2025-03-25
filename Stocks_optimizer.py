@@ -1,117 +1,94 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
 import numpy as np
-from scipy.optimize import minimize
-import plotly.graph_objects as go
+import matplotlib.pyplot as plt
+import seaborn as sns
+import yfinance as yf
+from xgboost import XGBRegressor
+from sklearn.ensemble import RandomForestRegressor
 
-# Function to fetch stock data from Yahoo Finance
-def get_stock_data(symbol, from_date, to_date):
-    try:
-        df = yf.download(symbol, start=from_date, end=to_date)
+st.title("Stock Forecasting & Portfolio Optimization")
+
+# User Inputs
+selected_stocks = st.text_input("Enter stock symbols separated by commas:").strip().upper().split(',')
+years_to_use = st.number_input("Enter the number of years of data to use:", min_value=1, max_value=5, value=2)
+forecast_days = st.number_input("Enter the number of days to forecast:", min_value=1, max_value=30, value=5)
+investment_amount = st.number_input("Enter the total amount to invest:", min_value=1000.0, value=100000.0)
+risk_profile = st.radio("Select your risk level:", [1, 2, 3], format_func=lambda x: {1: "Low", 2: "Medium", 3: "High"}[x])
+
+if st.button("Run Forecast and Optimize Portfolio"):
+    forecasted_prices = {}
+    volatilities = {}
+    
+    for selected_stock in selected_stocks:
+        df = yf.download(selected_stock, period=f"{years_to_use}y", interval="1d", auto_adjust=True)
+        
         if df.empty:
-            return None  
-
-        df = df.reset_index()
-        df.rename(columns={"Adj Close": "ClosePrice"}, inplace=True)
-        df["Date"] = pd.to_datetime(df["Date"])
+            st.warning(f"Skipping {selected_stock}: No valid data available.")
+            continue
         
-        return df
-    except Exception as e:
-        st.error(f"Error fetching data for {symbol}: {str(e)}")
-        return None
-
-# Function to calculate Sharpe ratio
-def sharpe_ratio(weights, returns, risk_free_rate=0.03):
-    portfolio_return = np.sum(weights * returns.mean()) * 252
-    portfolio_volatility = np.sqrt(np.dot(weights.T, np.dot(returns.cov() * 252, weights)))
-    return -(portfolio_return - risk_free_rate) / portfolio_volatility  # Negative because we minimize
-
-# Function to optimize capital allocation for max Sharpe Ratio
-def optimize_allocation(stock_data, capital):
-    try:
-        returns = pd.DataFrame({
-            stock: df["ClosePrice"].pct_change().dropna() for stock, df in stock_data.items() if "ClosePrice" in df
-        })
+        df = df[['Close']]
+        df.dropna(inplace=True)
         
-        if returns.empty:
-            st.error("No valid stock return data available.")
-            return {}, {}
-
-        stocks = list(returns.columns)
-
-        if len(stocks) < 2:
-            return {stock: capital / len(stocks) for stock in stocks}, {stock: 100 / len(stocks) for stock in stocks} if stocks else ({}, {})
-
-        constraints = ({'type': 'eq', 'fun': lambda weights: np.sum(weights) - 1})
-        bounds = [(0, 1)] * len(stocks)
-        init_guess = np.ones(len(stocks)) / len(stocks)
-        result = minimize(sharpe_ratio, init_guess, args=(returns,), bounds=bounds, constraints=constraints)
-
-        if not result.success:
-            st.warning("Optimization failed, using equal allocation.")
-            allocation = {stocks[i]: capital / len(stocks) for i in range(len(stocks))}
-            allocation_percentage = {stocks[i]: 100 / len(stocks) for i in range(len(stocks))}
+        future_dates = pd.date_range(df.index[-1], periods=forecast_days + 1, freq='B')[1:]
+        
+        # Add moving averages
+        df['MA_50'] = df['Close'].rolling(window=50).mean()
+        df['MA_200'] = df['Close'].rolling(window=200).mean()
+        
+        # XGBoost Model
+        df['Lag_1'] = df['Close'].shift(1)
+        df.dropna(inplace=True)
+        train_size = int(len(df) * 0.8)
+        train, test = df.iloc[:train_size], df.iloc[train_size:]
+        xgb_model = XGBRegressor(objective='reg:squarederror', n_estimators=100)
+        xgb_model.fit(train[['Lag_1']], train['Close'])
+        future_xgb = [xgb_model.predict(np.array([[df['Lag_1'].iloc[-1]]]).reshape(1, -1))[0] for _ in range(forecast_days)]
+        
+        # Random Forest Model
+        rf_model = RandomForestRegressor(n_estimators=100)
+        rf_model.fit(train[['Lag_1']], train['Close'])
+        future_rf = [rf_model.predict(np.array([[df['Lag_1'].iloc[-1]]]).reshape(1, -1))[0] for _ in range(forecast_days)]
+        
+        # Calculate Volatility
+        returns = df['Close'].pct_change().dropna()
+        volatilities[selected_stock] = np.std(returns)
+        forecasted_prices[selected_stock] = future_xgb[-1]
+        
+        # Plot Results
+        fig, ax = plt.subplots(figsize=(12, 6))
+        sns.set_style("darkgrid")
+        ax.plot(df.index, df['Close'], label=f'{selected_stock} Historical', linewidth=2, color='black')
+        ax.plot(df.index, df['MA_50'], label='50-Day MA', linestyle='dashed', color='blue')
+        ax.plot(df.index, df['MA_200'], label='200-Day MA', linestyle='dashed', color='purple')
+        ax.plot(future_dates, future_xgb, label=f'Forecasted Prices (XGBoost)', linestyle='dashed', color='red', marker='o')
+        ax.plot(future_dates, future_rf, label=f'Forecasted Prices (Random Forest)', linestyle='dashed', color='green', marker='x')
+        ax.legend(fontsize=12, loc='upper left')
+        ax.set_title(f"Historical & Forecasted Prices for {selected_stock}", fontsize=16, fontweight='bold')
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Close Price")
+        plt.xticks(rotation=45)
+        st.pyplot(fig)
+    
+    # Portfolio Optimization
+    risk_allocation = {1: 0.7, 2: 0.5, 3: 0.3}
+    allocation = {stock: investment_amount * risk_allocation[risk_profile] if volatilities[stock] > 0.03 else investment_amount * (1 - risk_allocation[risk_profile]) for stock in volatilities}
+    total_allocation = sum(allocation.values())
+    allocation_percentage = {stock: (amount / total_allocation) * 100 for stock, amount in allocation.items()}
+    
+    st.subheader("Optimized Stock Allocation")
+    for stock, amount in allocation.items():
+        st.write(f"{stock}: ₹{amount:.2f} ({allocation_percentage[stock]:.2f}%)")
+    
+    # Risk Level Classification
+    def classify_risk_level(volatility):
+        if volatility > 0.03:
+            return "High Risk"
+        elif 0.01 < volatility <= 0.03:
+            return "Medium Risk"
         else:
-            optimized_weights = result.x
-            allocation = {stocks[i]: optimized_weights[i] * capital for i in range(len(stocks))}
-            allocation_percentage = {stocks[i]: optimized_weights[i] * 100 for i in range(len(stocks))}
-
-        return allocation, allocation_percentage
-
-    except Exception as e:
-        st.error(f"Error in allocation optimization: {str(e)}")
-        return {}, {}
-
-# Streamlit UI
-st.title("🚀 AI-Powered Stock Allocation & Forecasting")
-st.markdown("### Optimize your stock investments and predict future trends with AI-powered analysis! 📊")
-
-st.sidebar.header("Enter Stock Details")
-num_stocks = st.sidebar.number_input("Number of Stocks", min_value=1, max_value=10, value=3)
-stocks = [st.sidebar.text_input(f"Stock {i+1} Symbol", "").strip().upper() for i in range(num_stocks)]
-from_date = st.sidebar.text_input("Start Date (YYYY-MM-DD)", "2022-01-01")
-to_date = st.sidebar.text_input("End Date (YYYY-MM-DD)", "2025-01-01")
-capital = st.sidebar.number_input("Total Capital (₹)", min_value=10000, value=100000)
-
-if st.sidebar.button("Run Analysis"):
-    stock_data = {stock: get_stock_data(stock, from_date, to_date) for stock in stocks if stock}
-    stock_data = {k: v for k, v in stock_data.items() if v is not None}
-
-    if len(stock_data) == 0:
-        st.error("No valid stock data available. Please check stock symbols and try again.")
-    else:
-        allocation, allocation_percentage = optimize_allocation(stock_data, capital)
-
-        st.subheader("💰 Optimized Capital Allocation")
-        allocation_df = pd.DataFrame({
-            "Stock": allocation.keys(), 
-            "Allocation (₹)": allocation.values(), 
-            "Allocation (%)": allocation_percentage.values()
-        })
-        allocation_df["Allocation Ratio"] = allocation_df["Allocation (%)"] / 100  # Allocation ratio column
-        st.dataframe(allocation_df)
-        
-        # Plot stock data
-        st.subheader("📉 Historical & Forecasted Price Trends")
-        fig = go.Figure()
-        for stock, df in stock_data.items():
-            fig.add_trace(go.Scatter(
-                x=df["Date"], y=df["ClosePrice"],
-                mode='lines', name=f"{stock} Historical",
-                line=dict(width=2),
-                hoverinfo='x+y'
-            ))
-        
-        fig.update_layout(
-            title="📈 Historical Stock Price Trends",
-            xaxis=dict(title="Date", showgrid=True, tickangle=-45),
-            yaxis=dict(title="Price (₹)", showgrid=True),
-            template="plotly_white",
-            legend=dict(title="Stock Data", x=0, y=1.1, orientation="h"),
-            hovermode="x unified"
-        )
-        st.plotly_chart(fig)
-        
-        st.success("✔ Analysis Completed!")
-
+            return "Low Risk"
+    
+    st.subheader("Risk Levels in Investment Optimization")
+    for stock, vol in volatilities.items():
+        st.write(f"{stock}: {classify_risk_level(vol)}")
