@@ -1,133 +1,137 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import yfinance as yf
 import matplotlib.pyplot as plt
 import seaborn as sns
-import yfinance as yf
 from xgboost import XGBRegressor
 from sklearn.ensemble import RandomForestRegressor
 
 # Streamlit UI
-st.set_page_config(page_title="Stock Forecast & Allocation", layout="wide")
+st.title("📈 AI-Powered Stock Portfolio Optimizer")
 
-st.title("📈 AI-Powered Stock Forecast & Investment Optimizer")
+# User Inputs
+selected_stocks = st.text_input("Enter stock symbols (comma-separated):").strip().upper().split(',')
+selected_stocks = [stock.strip() for stock in selected_stocks if stock]
 
-# Get user inputs
-selected_stocks = st.text_input("Enter stock symbols separated by commas (e.g., TCS.NS, INFY.NS):")
-years_to_use = st.slider("Select number of years of data to use:", 1, 5, 2)
-forecast_years = st.slider("Select forecast period in years:", 1, 5, 1)
-investment_amount = st.number_input("Enter the total investment amount (₹):", min_value=1000, step=500)
+years_to_use = st.number_input("Enter number of years for historical data:", min_value=1, max_value=10, value=2)
+forecast_days = st.number_input("Enter forecast period (in days):", min_value=1, max_value=365, value=30)
+investment_amount = st.number_input("Enter total investment amount (₹):", min_value=1000.0, value=50000.0)
+risk_profile = st.radio("Select your risk level:", [1, 2, 3], format_func=lambda x: {1: "Low", 2: "Medium", 3: "High"}[x])
 
-# Get client risk profile
-risk_profile = st.radio("Select your risk level:", ["Low", "Medium", "High"])
+# Initialize Storage
+forecasted_prices = {}
+volatilities = {}
 
-# Convert to numerical risk factor
-risk_factor = {"Low": 1, "Medium": 2, "High": 3}[risk_profile]
+# Process Each Stock
+for stock in selected_stocks:
+    df = yf.download(stock, period=f"{years_to_use}y", interval="1d", auto_adjust=True)
 
-# Process stock symbols
-if selected_stocks:
-    selected_stocks = [stock.strip().upper() for stock in selected_stocks.split(',')]
+    if df.empty:
+        st.warning(f"Skipping {stock}: No valid data available.")
+        continue
 
-    forecast_days = forecast_years * 365  # Convert years to days
-    forecasted_prices = {}
-    volatilities = {}
+    df = df[['Close']]
+    df.dropna(inplace=True)
+    
+    future_dates = pd.date_range(df.index[-1], periods=forecast_days + 1, freq='B')[1:]
 
-    for selected_stock in selected_stocks:
-        df = yf.download(selected_stock, period=f"{years_to_use}y", interval="1d", auto_adjust=True)
+    # Calculate Moving Averages
+    df['MA_50'] = df['Close'].rolling(window=50).mean()
+    df['MA_200'] = df['Close'].rolling(window=200).mean()
 
-        if df.empty:
-            st.warning(f"Skipping {selected_stock}: No valid data available.")
-            continue
+    # Feature Engineering
+    df['Lag_1'] = df['Close'].shift(1)
+    df.dropna(inplace=True)
 
-        df = df[['Close']]
-        df.dropna(inplace=True)
+    train_size = int(len(df) * 0.8)
+    train, test = df.iloc[:train_size], df.iloc[train_size:]
 
-        # Create moving averages
-        df['MA_50'] = df['Close'].rolling(window=50).mean()
-        df['MA_200'] = df['Close'].rolling(window=200).mean()
+    # XGBoost Model
+    xgb_model = XGBRegressor(objective='reg:squarederror', n_estimators=100)
+    xgb_model.fit(train[['Lag_1']], train['Close'])
+    future_xgb = [xgb_model.predict(np.array([[df['Lag_1'].iloc[-1]]]).reshape(1, -1))[0] for _ in range(forecast_days)]
 
-        # Feature Engineering
-        df['Lag_1'] = df['Close'].shift(1)
-        df.dropna(inplace=True)
+    # Random Forest Model
+    rf_model = RandomForestRegressor(n_estimators=100)
+    rf_model.fit(train[['Lag_1']], train['Close'])
+    future_rf = [rf_model.predict(np.array([[df['Lag_1'].iloc[-1]]]).reshape(1, -1))[0] for _ in range(forecast_days)]
 
-        # Train-test split
-        train_size = int(len(df) * 0.8)
-        train, test = df.iloc[:train_size], df.iloc[train_size:]
+    # Calculate Volatility
+    volatilities[stock] = float(np.std(df['Close'].pct_change().dropna()))
+    forecasted_prices[stock] = future_xgb[-1]
 
-        # XGBoost Model
-        xgb_model = XGBRegressor(objective='reg:squarederror', n_estimators=100)
-        xgb_model.fit(train[['Lag_1']], train['Close'])
-        future_xgb = [xgb_model.predict(np.array([[df['Lag_1'].iloc[-1]]]).reshape(1, -1))[0] for _ in range(forecast_days)]
+    # Plot Historical and Forecasted Prices
+    st.subheader(f"📊 Forecast for {stock}")
+    plt.figure(figsize=(14, 7))
+    sns.set_style("darkgrid")
+    plt.plot(df.index, df['Close'], label=f'{stock} Historical', linewidth=2, color='black')
+    plt.plot(df.index, df['MA_50'], label='50-Day MA', linestyle='dashed', color='blue')
+    plt.plot(df.index, df['MA_200'], label='200-Day MA', linestyle='dashed', color='purple')
+    plt.plot(future_dates, future_xgb, label=f'{stock} Forecasted (XGBoost)', linestyle='dashed', color='red', marker='o')
+    plt.plot(future_dates, future_rf, label=f'{stock} Forecasted (Random Forest)', linestyle='dashed', color='green', marker='x')
+    plt.legend(fontsize=12, loc='upper left', frameon=True, shadow=True, fancybox=True)
+    plt.title(f"Historical and Forecasted Prices for {stock}", fontsize=16, fontweight='bold')
+    plt.xlabel("Date", fontsize=14)
+    plt.ylabel("Close Price", fontsize=14)
+    plt.xticks(rotation=45, fontsize=12)
+    plt.yticks(fontsize=12)
+    plt.grid(True, linestyle='--', alpha=0.6)
+    st.pyplot(plt)
 
-        # Random Forest Model
-        rf_model = RandomForestRegressor(n_estimators=100)
-        rf_model.fit(train[['Lag_1']], train['Close'])
-        future_rf = [rf_model.predict(np.array([[df['Lag_1'].iloc[-1]]]).reshape(1, -1))[0] for _ in range(forecast_days)]
-
-        # Calculate Volatility (Standard Deviation of Returns)
-        returns = df['Close'].pct_change().dropna()
-        volatilities[selected_stock] = np.std(returns)
-        forecasted_prices[selected_stock] = future_xgb[-1]
-
-        # Plot Historical and Forecasted Prices
-        plt.figure(figsize=(14, 7))
-        sns.set_style("darkgrid")
-        plt.plot(df.index, df['Close'], label=f'{selected_stock} Historical', linewidth=2, color='black')
-        plt.plot(df.index, df['MA_50'], label='50-Day MA', linestyle='dashed', color='blue')
-        plt.plot(df.index, df['MA_200'], label='200-Day MA', linestyle='dashed', color='purple')
-        plt.plot(pd.date_range(df.index[-1], periods=forecast_days, freq='B'), future_xgb, 
-                 label=f'{selected_stock} Forecasted (XGBoost)', linestyle='dashed', color='red', marker='o')
-        plt.plot(pd.date_range(df.index[-1], periods=forecast_days, freq='B'), future_rf, 
-                 label=f'{selected_stock} Forecasted (Random Forest)', linestyle='dashed', color='green', marker='x')
-        plt.legend(fontsize=12, loc='upper left')
-        plt.title(f"Historical and Forecasted Prices for {selected_stock}", fontsize=16, fontweight='bold')
-        plt.xlabel("Date", fontsize=14)
-        plt.ylabel("Close Price", fontsize=14)
-        plt.xticks(rotation=45)
-        plt.grid(True, linestyle='--', alpha=0.6)
-        st.pyplot(plt)
-
-    # Portfolio Optimization: Allocate based on risk profile
+# Portfolio Optimization
+if forecasted_prices:
     risk_allocation = {1: 0.7, 2: 0.5, 3: 0.3}
     
-    # Allocate investment based on volatility
-    allocation = {
-        stock: investment_amount * risk_allocation[risk_factor] if float(volatilities[stock]) > 0.03
-        else investment_amount * (1 - risk_allocation[risk_factor]) 
-        for stock in volatilities
-    }
+    # Allocate investment proportionally based on risk
+    allocation = {}
+    safe_stocks = []
+    risky_stocks = []
+    
+    for stock, vol in volatilities.items():
+        if vol > 0.03:
+            risky_stocks.append(stock)
+        else:
+            safe_stocks.append(stock)
+    
+    risky_allocation = investment_amount * risk_allocation[risk_profile]
+    safe_allocation = investment_amount - risky_allocation
 
-    # Normalize allocation percentages to sum to 100%
+    if risky_stocks:
+        for stock in risky_stocks:
+            allocation[stock] = risky_allocation / len(risky_stocks)
+    
+    if safe_stocks:
+        for stock in safe_stocks:
+            allocation[stock] = safe_allocation / len(safe_stocks)
+
     total_allocation = sum(allocation.values())
+    allocation_percentage = {stock: (amount / total_allocation) * 100 for stock, amount in allocation.items()}
 
-    if total_allocation > 0:
-        allocation_percentage = {stock: (amount / total_allocation) * 100 for stock, amount in allocation.items()}
-    else:
-        allocation_percentage = {stock: 0 for stock in allocation}  
+    # Ensure Percentage Sums to 100%
+    total_percentage = sum(allocation_percentage.values())
+    if total_percentage != 100:
+        difference = 100 - total_percentage
+        first_stock = next(iter(allocation_percentage))
+        allocation_percentage[first_stock] += difference
 
-    # Convert to DataFrame for display
+    # Display Optimized Stock Allocation
+    st.subheader("💰 Optimized Stock Allocation")
     allocation_df = pd.DataFrame.from_dict(allocation, orient='index', columns=['Investment Amount (₹)'])
     allocation_df["Percentage (%)"] = allocation_df["Investment Amount (₹)"] / investment_amount * 100
-
-    # Ensure percentages sum up to 100%
-    allocation_df["Percentage (%)"] = (allocation_df["Percentage (%)"] / allocation_df["Percentage (%)"].sum()) * 100
-
-    # Display Results
-    st.subheader("💰 Optimized Stock Allocation")
     st.table(allocation_df)
 
     # Risk Classification
-        def classify_risk_level(volatility):
-            volatility = float(volatility)  # Ensure it's a float
-            if volatility > 0.03:
-                return "3 (High Risk)"
-            elif 0.01 < volatility <= 0.03:
-                return "2 (Medium Risk)"
-            else:
-                return "1 (Low Risk)"
-    
+    def classify_risk_level(volatility):
+        volatility = float(volatility)
+        if volatility > 0.03:
+            return "3 (High Risk)"
+        elif 0.01 < volatility <= 0.03:
+            return "2 (Medium Risk)"
+        else:
+            return "1 (Low Risk)"
 
+    risk_levels = {stock: classify_risk_level(vol) for stock, vol in volatilities.items()}
+    risk_df = pd.DataFrame.from_dict(risk_levels, orient='index', columns=['Risk Level'])
     st.subheader("⚠️ Risk Levels in Investment")
-    risk_df = pd.DataFrame.from_dict({stock: classify_risk_level(vol) for stock, vol in volatilities.items()}, 
-                                     orient='index', columns=['Risk Level'])
     st.table(risk_df)
