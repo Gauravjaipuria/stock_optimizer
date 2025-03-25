@@ -54,7 +54,7 @@ for stock in selected_stocks:
         st.warning(f"Skipping {stock}: No valid data available.")
         continue
 
-    df = df[['Close']]
+    df = df[['Close', 'Volume']]
     df = calculate_indicators(df)
     df.dropna(inplace=True)
     
@@ -65,7 +65,13 @@ for stock in selected_stocks:
     xgb_model.fit(train[['Close']], train['Close'])
     
     future_dates = pd.date_range(df.index[-1], periods=forecast_days + 1, freq='B')[1:]
-    future_xgb = [xgb_model.predict(np.array([[df['Close'].iloc[-1]]]).reshape(1, -1))[0] for _ in range(forecast_days)]
+    future_xgb = []
+    last_price = df['Close'].iloc[-1]
+    for _ in range(forecast_days):
+        predicted_price = xgb_model.predict(np.array([[last_price]]).reshape(1, -1))[0]
+        future_xgb.append(predicted_price)
+        last_price = predicted_price
+    
     forecasted_prices[stock] = future_xgb[-1]
     
     initial_price = df['Close'].iloc[0]
@@ -74,11 +80,13 @@ for stock in selected_stocks:
     
     st.subheader(f"📊 Forecast for {stock}")
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name=f'{stock} Historical'))
-    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], mode='lines', name='RSI'))
-    fig.add_trace(go.Scatter(x=df.index, y=df['MACD'], mode='lines', name='MACD'))
-    fig.add_trace(go.Scatter(x=future_dates, y=future_xgb, mode='lines+markers', name=f'{stock} Forecasted (XGBoost)'))
-    fig.update_layout(title=f"Historical and Forecasted Prices for {stock}")
+    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name=f'{stock} Historical', line=dict(color='blue')))
+    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], mode='lines', name='RSI', line=dict(color='lightblue')))
+    fig.add_trace(go.Scatter(x=df.index, y=df['MACD'], mode='lines', name='MACD', line=dict(color='red')))
+    fig.add_trace(go.Scatter(x=df.index, y=df['Upper_BB'], mode='lines', name='Upper Bollinger Band', line=dict(color='green', dash='dot')))
+    fig.add_trace(go.Scatter(x=df.index, y=df['Lower_BB'], mode='lines', name='Lower Bollinger Band', line=dict(color='green', dash='dot')))
+    fig.add_trace(go.Scatter(x=future_dates, y=future_xgb, mode='lines+markers', name=f'{stock} Forecasted (XGBoost)', line=dict(color='orange', dash='dash')))
+    fig.update_layout(title=f"Historical and Forecasted Prices for {stock}", xaxis_title='Date', yaxis_title='Price', template='plotly_white')
     st.plotly_chart(fig)
 
 st.subheader("📊 Backtesting Performance")
