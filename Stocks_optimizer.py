@@ -5,7 +5,6 @@ import yfinance as yf
 import matplotlib.pyplot as plt
 import seaborn as sns
 from xgboost import XGBRegressor
-from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 
 # Streamlit UI
@@ -38,6 +37,10 @@ for stock in selected_stocks:
     df = df[['Close']]
     df.dropna(inplace=True)
     
+    if len(df) < 2:
+        st.warning(f"Skipping {stock}: Not enough historical data.")
+        continue
+
     future_dates = pd.date_range(df.index[-1], periods=forecast_days + 1, freq='B')[1:]
     
     # Calculate Moving Averages
@@ -59,7 +62,11 @@ for stock in selected_stocks:
     # Backtesting (Simple Buy & Hold Strategy)
     initial_price = df['Close'].iloc[0]
     final_price = df['Close'].iloc[-1]
-    returns[stock] = ((final_price - initial_price) / initial_price) * 100
+
+    if not np.isnan(initial_price) and not np.isnan(final_price) and initial_price > 0:
+        returns[stock] = ((final_price - initial_price) / initial_price) * 100
+    else:
+        st.warning(f"Skipping {stock}: Unable to calculate returns due to missing price data.")
     
     # AI-Based Stock Screener (Linear Regression for Trend Analysis)
     lr_model = LinearRegression()
@@ -85,16 +92,26 @@ for stock in selected_stocks:
 
 # Display Backtesting Results
 st.subheader("📊 Backtesting Performance")
-returns_df = pd.DataFrame.from_dict(returns, orient='index', columns=['Return (%)'])
-st.table(returns_df)
+if returns:
+    returns_df = pd.DataFrame.from_dict(returns, orient='index', columns=['Return (%)'])
+    st.table(returns_df)
+else:
+    st.warning("No valid backtesting data available.")
 
 # Display Sector-wise Diversification
 st.subheader("📌 Sector-wise Diversification")
-sector_df = pd.DataFrame.from_dict(sector_data, orient='index', columns=['Sector'])
-st.table(sector_df)
+if sector_data:
+    sector_df = pd.DataFrame.from_dict(sector_data, orient='index', columns=['Sector'])
+    st.table(sector_df)
+else:
+    st.warning("No sector diversification data available.")
 
 # AI Stock Screener (Simple Trend Analysis)
 st.subheader("🤖 AI-Based Stock Screener")
-trend_df = pd.DataFrame.from_dict({stock: trend_slope for stock in selected_stocks}, orient='index', columns=['Trend Slope'])
-trend_df['Signal'] = trend_df['Trend Slope'].apply(lambda x: 'Bullish' if x > 0 else 'Bearish')
-st.table(trend_df)
+trend_dict = {stock: trend_slope for stock in selected_stocks if stock in returns}  
+if trend_dict:
+    trend_df = pd.DataFrame.from_dict(trend_dict, orient='index', columns=['Trend Slope'])
+    trend_df['Signal'] = trend_df['Trend Slope'].apply(lambda x: 'Bullish' if x > 0 else 'Bearish')
+    st.table(trend_df)
+else:
+    st.warning("No trend analysis data available.")
