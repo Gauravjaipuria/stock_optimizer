@@ -1,3 +1,10 @@
 plotly
 yfinance
 statsmodels
+matplotlib 
+seaborn 
+pandas 
+numpy
+xgboost
+scikit-learn
+
