@@ -1,25 +1,21 @@
 import streamlit as st
-from nselib import capital_market
+import yfinance as yf
 import pandas as pd
 import numpy as np
 from scipy.optimize import minimize
-from statsmodels.tsa.arima.model import ARIMA
 import plotly.graph_objects as go
 
-# Function to fetch stock data
+# Function to fetch stock data from Yahoo Finance
 def get_stock_data(symbol, from_date, to_date):
     try:
-        data = capital_market.price_volume_and_deliverable_position_data(symbol=symbol, from_date=from_date, to_date=to_date)
-        df = pd.DataFrame(data)
-        
-        if df.empty or "ClosePrice" not in df:
+        df = yf.download(symbol, start=from_date, end=to_date)
+        if df.empty:
             return None  
 
-        df["ClosePrice"] = pd.to_numeric(df["ClosePrice"], errors="coerce")
+        df = df.reset_index()
+        df.rename(columns={"Adj Close": "ClosePrice", "Date": "Date"}, inplace=True)
         df["Date"] = pd.to_datetime(df["Date"])
-        df.dropna(subset=["ClosePrice"], inplace=True)
-        df = df.sort_values("Date")
-
+        
         return df
     except Exception as e:
         st.error(f"Error fetching data for {symbol}: {str(e)}")
@@ -62,8 +58,8 @@ st.markdown("### Optimize your stock investments and predict future trends with 
 st.sidebar.header("Enter Stock Details")
 num_stocks = st.sidebar.number_input("Number of Stocks", min_value=1, max_value=10, value=3)
 stocks = [st.sidebar.text_input(f"Stock {i+1} Symbol", "").strip().upper() for i in range(num_stocks)]
-from_date = st.sidebar.text_input("Start Date (DD-MM-YYYY)", "01-01-2022")
-to_date = st.sidebar.text_input("End Date (DD-MM-YYYY)", "01-01-2025")
+from_date = st.sidebar.text_input("Start Date (YYYY-MM-DD)", "2022-01-01")
+to_date = st.sidebar.text_input("End Date (YYYY-MM-DD)", "2025-01-01")
 capital = st.sidebar.number_input("Total Capital (₹)", min_value=10000, value=100000)
 
 if st.sidebar.button("Run Analysis"):
