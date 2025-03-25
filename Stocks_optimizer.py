@@ -5,6 +5,9 @@ import yfinance as yf
 import matplotlib.pyplot as plt
 import seaborn as sns
 from xgboost import XGBRegressor
+from sklearn.ensemble import RandomForestRegressor
+from statsmodels.tsa.arima.model import ARIMA
+from sklearn.metrics import mean_squared_error
 from sklearn.linear_model import LinearRegression
 
 # Streamlit UI
@@ -17,101 +20,79 @@ selected_stocks = [stock.strip() + ".NS" if country == "India" else stock.strip(
 
 years_to_use = st.number_input("Enter number of years for historical data:", min_value=1, max_value=10, value=2)
 forecast_days = st.number_input("Enter forecast period (in days):", min_value=1, max_value=365, value=30)
-investment_amount = st.number_input("Enter total investment amount (₹):", min_value=1000.0, value=50000.0)
-risk_profile = st.radio("Select your risk level:", [1, 2, 3], format_func=lambda x: {1: "Low", 2: "Medium", 3: "High"}[x])
 
 # Initialize Storage
-forecasted_prices = {}
-volatilities = {}
-sector_data = {}
-returns = {}
+forecast_results = {}
 
 # Process Each Stock
 for stock in selected_stocks:
     df = yf.download(stock, period=f"{years_to_use}y", interval="1d", auto_adjust=True)
     
-    if df.empty:
-        st.warning(f"Skipping {stock}: No valid data available.")
+    if df.empty or len(df) < 50:
+        st.warning(f"Skipping {stock}: Not enough valid data.")
         continue
 
     df = df[['Close']]
     df.dropna(inplace=True)
     
-    if len(df) < 2:
-        st.warning(f"Skipping {stock}: Not enough historical data.")
-        continue
-
     future_dates = pd.date_range(df.index[-1], periods=forecast_days + 1, freq='B')[1:]
-    
-    # Calculate Moving Averages
-    df['MA_50'] = df['Close'].rolling(window=50).mean()
-    df['MA_200'] = df['Close'].rolling(window=200).mean()
 
     # Feature Engineering
     df['Lag_1'] = df['Close'].shift(1)
+    df['MA_50'] = df['Close'].rolling(window=50).mean()
+    df['MA_200'] = df['Close'].rolling(window=200).mean()
     df.dropna(inplace=True)
 
     train_size = int(len(df) * 0.8)
     train, test = df.iloc[:train_size], df.iloc[train_size:]
 
-    # XGBoost Model
-    xgb_model = XGBRegressor(objective='reg:squarederror', n_estimators=100)
-    xgb_model.fit(train[['Lag_1']], train['Close'])
-    future_xgb = [xgb_model.predict(np.array([[df['Lag_1'].iloc[-1]]]).reshape(1, -1))[0] for _ in range(forecast_days)]
+    # Model Training and Forecasting
+    models = {
+        "Random Forest": RandomForestRegressor(n_estimators=100, random_state=42),
+        "XGBoost": XGBRegressor(objective='reg:squarederror', n_estimators=100),
+        "ARIMA": None
+    }
 
-    # Backtesting (Simple Buy & Hold Strategy)
-    initial_price = df['Close'].iloc[0]
-    final_price = df['Close'].iloc[-1]
+    forecasts = {}
+    errors = {}
 
-    if not np.isnan(initial_price) and not np.isnan(final_price) and initial_price > 0:
-        returns[stock] = ((final_price - initial_price) / initial_price) * 100
-    else:
-        st.warning(f"Skipping {stock}: Unable to calculate returns due to missing price data.")
-    
-    # AI-Based Stock Screener (Linear Regression for Trend Analysis)
-    lr_model = LinearRegression()
-    lr_model.fit(np.arange(len(df)).reshape(-1, 1), df['Close'])
-    trend_slope = lr_model.coef_[0]
-    
-    # Store Data
-    forecasted_prices[stock] = future_xgb[-1]
-    volatilities[stock] = float(np.std(df['Close'].pct_change().dropna()))
-    sector_data[stock] = "Technology"  # Placeholder; real data should be fetched
-    
+    # Train ML Models
+    for model_name, model in models.items():
+        if model_name == "ARIMA":
+            try:
+                arima_model = ARIMA(train['Close'], order=(5,1,0)).fit()
+                forecast = arima_model.forecast(steps=len(test))
+                forecasts[model_name] = forecast
+                errors[model_name] = mean_squared_error(test['Close'], forecast, squared=False)
+            except Exception as e:
+                st.warning(f"Skipping ARIMA for {stock} due to error: {e}")
+        else:
+            model.fit(train[['Lag_1']], train['Close'])
+            predictions = model.predict(test[['Lag_1']])
+            forecasts[model_name] = model.predict(np.array(df['Lag_1'].iloc[-forecast_days:]).reshape(-1, 1))
+            errors[model_name] = mean_squared_error(test['Close'], predictions, squared=False)
+
+    # Select Best Model
+    best_model = min(errors, key=errors.get)
+    best_forecast = forecasts[best_model]
+    forecast_results[stock] = {"Best Model": best_model, "Forecast": best_forecast[-1]}
+
     # Plot Historical and Forecasted Prices
-    st.subheader(f"📊 Forecast for {stock}")
+    st.subheader(f"📊 Forecast for {stock} (Best Model: {best_model})")
     plt.figure(figsize=(14, 7))
     sns.set_style("darkgrid")
     plt.plot(df.index, df['Close'], label=f'{stock} Historical', linewidth=2, color='black')
     plt.plot(df.index, df['MA_50'], label='50-Day MA', linestyle='dashed', color='blue')
     plt.plot(df.index, df['MA_200'], label='200-Day MA', linestyle='dashed', color='purple')
-    plt.plot(future_dates, future_xgb, label=f'{stock} Forecasted (XGBoost)', linestyle='dashed', color='red', marker='o')
+    plt.plot(future_dates, best_forecast, label=f'{stock} Forecasted ({best_model})', linestyle='dashed', color='red', marker='o')
     plt.legend()
     plt.title(f"Historical and Forecasted Prices for {stock}")
     st.pyplot(plt)
 
-# Display Backtesting Results
-st.subheader("📊 Backtesting Performance")
-if returns:
-    returns_df = pd.DataFrame.from_dict(returns, orient='index', columns=['Return (%)'])
-    st.table(returns_df)
+# Display Forecast Results
+st.subheader("📌 Forecast Results")
+if forecast_results:
+    forecast_df = pd.DataFrame.from_dict(forecast_results, orient='index')
+    st.table(forecast_df)
 else:
-    st.warning("No valid backtesting data available.")
-
-# Display Sector-wise Diversification
-st.subheader("📌 Sector-wise Diversification")
-if sector_data:
-    sector_df = pd.DataFrame.from_dict(sector_data, orient='index', columns=['Sector'])
-    st.table(sector_df)
-else:
-    st.warning("No sector diversification data available.")
-
-# AI Stock Screener (Simple Trend Analysis)
-st.subheader("🤖 AI-Based Stock Screener")
-trend_dict = {stock: trend_slope for stock in selected_stocks if stock in returns}  
-if trend_dict:
-    trend_df = pd.DataFrame.from_dict(trend_dict, orient='index', columns=['Trend Slope'])
-    trend_df['Signal'] = trend_df['Trend Slope'].apply(lambda x: 'Bullish' if x > 0 else 'Bearish')
-    st.table(trend_df)
-else:
-    st.warning("No trend analysis data available.")
+    st.warning("No forecast data available.")
