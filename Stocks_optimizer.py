@@ -14,14 +14,11 @@ from sklearn.linear_model import LinearRegression
 st.title("📈 AI-Powered Stock Portfolio Optimizer")
 
 # User Inputs
-country = st.radio("Select Country:", ["India", "US"])
 selected_stocks = st.text_input("Enter stock symbols (comma-separated):").strip().upper().split(',')
-selected_stocks = [stock.strip() + ".NS" if country == "India" else stock.strip() for stock in selected_stocks if stock]
+selected_stocks = [stock.strip() for stock in selected_stocks if stock]
 
 years_to_use = st.number_input("Enter number of years for historical data:", min_value=1, max_value=10, value=2)
 forecast_days = st.number_input("Enter forecast period (in days):", min_value=1, max_value=365, value=30)
-
-risk_profile = st.selectbox("Select Your Risk Profile:", ["Low", "Moderate", "High"])
 
 # Storage for Forecast Results
 forecast_results = {}
@@ -41,12 +38,15 @@ for stock in selected_stocks:
 
     # Feature Engineering
     df['Lag_1'] = df['Close'].shift(1)
-    df['MA_50'] = df['Close'].rolling(window=50).mean()
-    df['MA_200'] = df['Close'].rolling(window=200).mean()
     df.dropna(inplace=True)
 
     train_size = int(len(df) * 0.8)
     train, test = df.iloc[:train_size], df.iloc[train_size:]
+
+    # Ensure test is not empty
+    if test.empty:
+        st.warning(f"Skipping {stock}: Not enough test data after split.")
+        continue
 
     # Define Models
     models = {
@@ -67,8 +67,10 @@ for stock in selected_stocks:
                 forecast = np.array(forecast).reshape(-1)  # Ensure correct shape
                 forecasts[model_name] = forecast
 
-                if len(test) == len(forecast):
-                    errors[model_name] = mean_squared_error(test['Close'], forecast, squared=False)
+                # Fix shape mismatch
+                test_values = test['Close'].values.reshape(-1)
+                if len(test_values) == len(forecast):
+                    errors[model_name] = mean_squared_error(test_values, forecast, squared=False)
             except Exception as e:
                 st.warning(f"Skipping ARIMA for {stock} due to error: {e}")
         else:
@@ -76,15 +78,22 @@ for stock in selected_stocks:
             train_X, test_X = train[['Lag_1']], test[['Lag_1']]
             train_y, test_y = train['Close'], test['Close']
 
-            if not train_X.empty and not test_X.empty:
-                model.fit(train_X, train_y)
-                predictions = model.predict(test_X.to_numpy().reshape(-1, 1))  # Fix shape issue
-                forecasts[model_name] = model.predict(np.array(df['Lag_1'].iloc[-forecast_days:]).reshape(-1, 1))
+            # Convert to numpy arrays to ensure compatibility
+            train_X, test_X = train_X.to_numpy(), test_X.to_numpy()
+            train_y, test_y = train_y.to_numpy().reshape(-1), test_y.to_numpy().reshape(-1)
 
-                if len(test_y) == len(predictions):
-                    errors[model_name] = mean_squared_error(test_y, predictions, squared=False)
+            if not train_X.size or not test_X.size:
+                st.warning(f"Skipping {stock}: Model training data is empty.")
+                continue
 
-    # Select Best Model Based on Risk Profile
+            model.fit(train_X, train_y)
+            predictions = model.predict(test_X)  # Predictions should match test_y size
+
+            # Ensure test_y and predictions have the same shape
+            if len(test_y) == len(predictions):
+                errors[model_name] = mean_squared_error(test_y, predictions, squared=False)
+
+    # Select Best Model Based on RMSE
     if errors:
         best_model = min(errors, key=errors.get)
     else:
@@ -99,8 +108,6 @@ for stock in selected_stocks:
     plt.figure(figsize=(14, 7))
     sns.set_style("darkgrid")
     plt.plot(df.index, df['Close'], label=f'{stock} Historical', linewidth=2, color='black')
-    plt.plot(df.index, df['MA_50'], label='50-Day MA', linestyle='dashed', color='blue')
-    plt.plot(df.index, df['MA_200'], label='200-Day MA', linestyle='dashed', color='purple')
     if len(best_forecast) == forecast_days:
         plt.plot(future_dates, best_forecast, label=f'{stock} Forecasted ({best_model})', linestyle='dashed', color='red', marker='o')
     plt.legend()
