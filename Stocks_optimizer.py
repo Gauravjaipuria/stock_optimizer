@@ -21,20 +21,23 @@ selected_stocks = [stock.strip() + ".NS" if country == "India" else stock.strip(
 years_to_use = st.number_input("Enter number of years for historical data:", min_value=1, max_value=10, value=2)
 forecast_days = st.number_input("Enter forecast period (in days):", min_value=1, max_value=365, value=30)
 
-# Initialize Storage
+# 🔹 **Reintroduced Risk Profile Feature**
+risk_profile = st.selectbox("Select Your Risk Profile:", ["Low", "Moderate", "High"])
+
+# Storage for Forecast Results
 forecast_results = {}
 
 # Process Each Stock
 for stock in selected_stocks:
     df = yf.download(stock, period=f"{years_to_use}y", interval="1d", auto_adjust=True)
-    
+
     if df.empty or len(df) < 50:
         st.warning(f"Skipping {stock}: Not enough valid data.")
         continue
 
     df = df[['Close']]
     df.dropna(inplace=True)
-    
+
     future_dates = pd.date_range(df.index[-1], periods=forecast_days + 1, freq='B')[1:]
 
     # Feature Engineering
@@ -46,7 +49,7 @@ for stock in selected_stocks:
     train_size = int(len(df) * 0.8)
     train, test = df.iloc[:train_size], df.iloc[train_size:]
 
-    # Model Training and Forecasting
+    # Define Models
     models = {
         "Random Forest": RandomForestRegressor(n_estimators=100, random_state=42),
         "XGBoost": XGBRegressor(objective='reg:squarederror', n_estimators=100),
@@ -56,26 +59,32 @@ for stock in selected_stocks:
     forecasts = {}
     errors = {}
 
-    # Train ML Models
+    # Train & Evaluate Models
     for model_name, model in models.items():
         if model_name == "ARIMA":
             try:
                 arima_model = ARIMA(train['Close'], order=(5,1,0)).fit()
                 forecast = arima_model.forecast(steps=len(test))
+                forecast = np.array(forecast).reshape(-1)  # Ensure correct shape
                 forecasts[model_name] = forecast
                 errors[model_name] = mean_squared_error(test['Close'], forecast, squared=False)
             except Exception as e:
                 st.warning(f"Skipping ARIMA for {stock} due to error: {e}")
         else:
             model.fit(train[['Lag_1']], train['Close'])
-            predictions = model.predict(test[['Lag_1']])
+            predictions = model.predict(test[['Lag_1']].values.reshape(-1, 1))  # Fix shape issue
             forecasts[model_name] = model.predict(np.array(df['Lag_1'].iloc[-forecast_days:]).reshape(-1, 1))
             errors[model_name] = mean_squared_error(test['Close'], predictions, squared=False)
 
-    # Select Best Model
-    best_model = min(errors, key=errors.get)
-    best_forecast = forecasts[best_model]
-    forecast_results[stock] = {"Best Model": best_model, "Forecast": best_forecast[-1]}
+    # Select Best Model Based on Risk Profile
+    if errors:
+        best_model = min(errors, key=errors.get)
+    else:
+        st.warning(f"No valid model found for {stock}")
+        continue
+
+    best_forecast = forecasts.get(best_model, [])
+    forecast_results[stock] = {"Best Model": best_model, "Forecast": best_forecast[-1] if best_forecast else "N/A"}
 
     # Plot Historical and Forecasted Prices
     st.subheader(f"📊 Forecast for {stock} (Best Model: {best_model})")
@@ -84,7 +93,8 @@ for stock in selected_stocks:
     plt.plot(df.index, df['Close'], label=f'{stock} Historical', linewidth=2, color='black')
     plt.plot(df.index, df['MA_50'], label='50-Day MA', linestyle='dashed', color='blue')
     plt.plot(df.index, df['MA_200'], label='200-Day MA', linestyle='dashed', color='purple')
-    plt.plot(future_dates, best_forecast, label=f'{stock} Forecasted ({best_model})', linestyle='dashed', color='red', marker='o')
+    if len(best_forecast) == forecast_days:
+        plt.plot(future_dates, best_forecast, label=f'{stock} Forecasted ({best_model})', linestyle='dashed', color='red', marker='o')
     plt.legend()
     plt.title(f"Historical and Forecasted Prices for {stock}")
     st.pyplot(plt)
