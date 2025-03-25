@@ -92,7 +92,7 @@ if selected_stocks:
     
     # Allocate investment based on volatility
     allocation = {
-        stock: investment_amount * risk_allocation[risk_factor] if volatilities[stock] > 0.03 
+        stock: investment_amount * risk_allocation[risk_factor] if float(volatilities[stock]) > 0.03
         else investment_amount * (1 - risk_allocation[risk_factor]) 
         for stock in volatilities
     }
