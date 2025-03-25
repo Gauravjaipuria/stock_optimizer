@@ -11,8 +11,9 @@ from sklearn.ensemble import RandomForestRegressor
 st.title("📈 AI-Powered Stock Portfolio Optimizer")
 
 # User Inputs
+country = st.radio("Select Market:", ["India", "US"])
 selected_stocks = st.text_input("Enter stock symbols (comma-separated):").strip().upper().split(',')
-selected_stocks = [stock.strip() for stock in selected_stocks if stock]
+selected_stocks = [stock.strip() + ".NS" if country == "India" else stock.strip() for stock in selected_stocks if stock]
 
 years_to_use = st.number_input("Enter number of years for historical data:", min_value=1, max_value=10, value=2)
 forecast_days = st.number_input("Enter forecast period (in days):", min_value=1, max_value=365, value=30)
