@@ -21,7 +21,6 @@ selected_stocks = [stock.strip() + ".NS" if country == "India" else stock.strip(
 years_to_use = st.number_input("Enter number of years for historical data:", min_value=1, max_value=10, value=2)
 forecast_days = st.number_input("Enter forecast period (in days):", min_value=1, max_value=365, value=30)
 
-# 🔹 **Reintroduced Risk Profile Feature**
 risk_profile = st.selectbox("Select Your Risk Profile:", ["Low", "Moderate", "High"])
 
 # Storage for Forecast Results
@@ -67,14 +66,23 @@ for stock in selected_stocks:
                 forecast = arima_model.forecast(steps=len(test))
                 forecast = np.array(forecast).reshape(-1)  # Ensure correct shape
                 forecasts[model_name] = forecast
-                errors[model_name] = mean_squared_error(test['Close'], forecast, squared=False)
+
+                if len(test) == len(forecast):
+                    errors[model_name] = mean_squared_error(test['Close'], forecast, squared=False)
             except Exception as e:
                 st.warning(f"Skipping ARIMA for {stock} due to error: {e}")
         else:
-            model.fit(train[['Lag_1']], train['Close'])
-            predictions = model.predict(test[['Lag_1']].values.reshape(-1, 1))  # Fix shape issue
-            forecasts[model_name] = model.predict(np.array(df['Lag_1'].iloc[-forecast_days:]).reshape(-1, 1))
-            errors[model_name] = mean_squared_error(test['Close'], predictions, squared=False)
+            # Ensure input shape compatibility
+            train_X, test_X = train[['Lag_1']], test[['Lag_1']]
+            train_y, test_y = train['Close'], test['Close']
+
+            if not train_X.empty and not test_X.empty:
+                model.fit(train_X, train_y)
+                predictions = model.predict(test_X.to_numpy().reshape(-1, 1))  # Fix shape issue
+                forecasts[model_name] = model.predict(np.array(df['Lag_1'].iloc[-forecast_days:]).reshape(-1, 1))
+
+                if len(test_y) == len(predictions):
+                    errors[model_name] = mean_squared_error(test_y, predictions, squared=False)
 
     # Select Best Model Based on Risk Profile
     if errors:
@@ -84,7 +92,7 @@ for stock in selected_stocks:
         continue
 
     best_forecast = forecasts.get(best_model, [])
-    forecast_results[stock] = {"Best Model": best_model, "Forecast": best_forecast[-1] if best_forecast else "N/A"}
+    forecast_results[stock] = {"Best Model": best_model, "Forecast": best_forecast[-1] if len(best_forecast) else "N/A"}
 
     # Plot Historical and Forecasted Prices
     st.subheader(f"📊 Forecast for {stock} (Best Model: {best_model})")
