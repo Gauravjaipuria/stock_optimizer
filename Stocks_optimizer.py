@@ -13,7 +13,7 @@ def get_stock_data(symbol, from_date, to_date):
             return None  
 
         df = df.reset_index()
-        df.rename(columns={"Adj Close": "ClosePrice", "Date": "Date"}, inplace=True)
+        df.rename(columns={"Adj Close": "ClosePrice"}, inplace=True)
         df["Date"] = pd.to_datetime(df["Date"])
         
         return df
@@ -29,27 +29,39 @@ def sharpe_ratio(weights, returns, risk_free_rate=0.03):
 
 # Function to optimize capital allocation for max Sharpe Ratio
 def optimize_allocation(stock_data, capital):
-    returns = pd.DataFrame({stock: df["ClosePrice"].pct_change().dropna() for stock, df in stock_data.items()})
-    stocks = list(returns.columns)
+    try:
+        returns = pd.DataFrame({
+            stock: df["ClosePrice"].pct_change().dropna() for stock, df in stock_data.items() if "ClosePrice" in df
+        })
+        
+        if returns.empty:
+            st.error("No valid stock return data available.")
+            return {}, {}
 
-    if len(stocks) < 2:
-        return {stock: capital / len(stocks) for stock in stocks}, {stock: 100 / len(stocks) for stock in stocks} if stocks else ({}, {})
+        stocks = list(returns.columns)
 
-    constraints = ({'type': 'eq', 'fun': lambda weights: np.sum(weights) - 1})
-    bounds = [(0, 1)] * len(stocks)
-    init_guess = np.ones(len(stocks)) / len(stocks)
-    result = minimize(sharpe_ratio, init_guess, args=(returns,), bounds=bounds, constraints=constraints)
+        if len(stocks) < 2:
+            return {stock: capital / len(stocks) for stock in stocks}, {stock: 100 / len(stocks) for stock in stocks} if stocks else ({}, {})
 
-    if not result.success:
-        st.warning("Optimization failed, using equal allocation.")
-        allocation = {stocks[i]: capital / len(stocks) for i in range(len(stocks))}
-        allocation_percentage = {stocks[i]: 100 / len(stocks) for i in range(len(stocks))}
-    else:
-        optimized_weights = result.x
-        allocation = {stocks[i]: optimized_weights[i] * capital for i in range(len(stocks))}
-        allocation_percentage = {stocks[i]: optimized_weights[i] * 100 for i in range(len(stocks))}
+        constraints = ({'type': 'eq', 'fun': lambda weights: np.sum(weights) - 1})
+        bounds = [(0, 1)] * len(stocks)
+        init_guess = np.ones(len(stocks)) / len(stocks)
+        result = minimize(sharpe_ratio, init_guess, args=(returns,), bounds=bounds, constraints=constraints)
 
-    return allocation, allocation_percentage
+        if not result.success:
+            st.warning("Optimization failed, using equal allocation.")
+            allocation = {stocks[i]: capital / len(stocks) for i in range(len(stocks))}
+            allocation_percentage = {stocks[i]: 100 / len(stocks) for i in range(len(stocks))}
+        else:
+            optimized_weights = result.x
+            allocation = {stocks[i]: optimized_weights[i] * capital for i in range(len(stocks))}
+            allocation_percentage = {stocks[i]: optimized_weights[i] * 100 for i in range(len(stocks))}
+
+        return allocation, allocation_percentage
+
+    except Exception as e:
+        st.error(f"Error in allocation optimization: {str(e)}")
+        return {}, {}
 
 # Streamlit UI
 st.title("🚀 AI-Powered Stock Allocation & Forecasting")
@@ -102,3 +114,4 @@ if st.sidebar.button("Run Analysis"):
         st.plotly_chart(fig)
         
         st.success("✔ Analysis Completed!")
+
