@@ -94,47 +94,4 @@ if forecasted_prices:
             safe_stocks.append(stock)
 
     # Investment split based on risk profile
-    risky_allocation = investment_amount * risk_allocation[risk_profile]
-    safe_allocation = investment_amount - risky_allocation
-
-    # Distribute investment
-    if risky_stocks:
-        per_risky_stock = risky_allocation / len(risky_stocks)
-        for stock in risky_stocks:
-            allocation[stock] = per_risky_stock
-    
-    if safe_stocks:
-        per_safe_stock = safe_allocation / len(safe_stocks)
-        for stock in safe_stocks:
-            allocation[stock] = per_safe_stock
-
-    # Ensure total allocation sums to 100%
-    total_allocation = sum(allocation.values())
-    allocation_percentage = {stock: (amount / total_allocation) * 100 for stock, amount in allocation.items()}
-
-    # Adjust first stock to correct rounding errors
-    total_percentage = sum(allocation_percentage.values())
-    if total_percentage != 100:
-        first_stock = next(iter(allocation_percentage))
-        allocation_percentage[first_stock] += 100 - total_percentage
-
-    # Display Optimized Stock Allocation
-    st.subheader("💰 Optimized Stock Allocation")
-    allocation_df = pd.DataFrame.from_dict(allocation, orient='index', columns=['Investment Amount (₹)'])
-    allocation_df["Percentage (%)"] = allocation_df["Investment Amount (₹)"] / investment_amount * 100
-    st.table(allocation_df)
-
-    # Risk Classification
-    def classify_risk_level(volatility):
-        volatility = float(volatility)
-        if volatility > 0.03:
-            return "3 (High Risk)"
-        elif 0.01 < volatility <= 0.03:
-            return "2 (Medium Risk)"
-        else:
-            return "1 (Low Risk)"
-
-    risk_levels = {stock: classify_risk_level(vol) for stock, vol in volatilities.items()}
-    risk_df = pd.DataFrame.from_dict(risk_levels, orient='index', columns=['Risk Level'])
-    st.subheader("⚠️ Risk Levels in Investment")
-    st.table(risk_df)
+    risky_allocation = investment_amount * risk_all_*
