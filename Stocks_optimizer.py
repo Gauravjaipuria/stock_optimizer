@@ -117,13 +117,15 @@ if selected_stocks:
     st.table(allocation_df)
 
     # Risk Classification
-    def classify_risk_level(volatility):
-        if volatility > 0.03:
-            return "High Risk"
-        elif 0.01 < volatility <= 0.03:
-            return "Medium Risk"
-        else:
-            return "Low Risk"
+        def classify_risk_level(volatility):
+            volatility = float(volatility)  # Ensure it's a float
+            if volatility > 0.03:
+                return "3 (High Risk)"
+            elif 0.01 < volatility <= 0.03:
+                return "2 (Medium Risk)"
+            else:
+                return "1 (Low Risk)"
+    
 
     st.subheader("⚠️ Risk Levels in Investment")
     risk_df = pd.DataFrame.from_dict({stock: classify_risk_level(vol) for stock, vol in volatilities.items()}, 
