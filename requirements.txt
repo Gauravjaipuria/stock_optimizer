@@ -8,4 +8,4 @@ numpy
 xgboost
 scikit-learn
 pandas-ta
-setuptools wheel
+no-cache-dir --force-reinstall setuptools pkg_resources
