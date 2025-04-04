@@ -38,14 +38,14 @@ for stock in selected_stocks:
 
     # Get Last Traded Price
     try:
-    if not df['Close'].empty and pd.notna(df['Close'].iloc[-1]):
-        last_traded_price = float(df['Close'].iloc[-1])
-        last_traded_price_str = f"₹{last_traded_price:.2f}"
-    else:
-        last_traded_price_str = "Data Not Available"
+        if not df['Close'].empty and pd.notna(df['Close'].iloc[-1]):
+            last_traded_price = float(df['Close'].iloc[-1])
+            last_traded_price_str = f"₹{last_traded_price:.2f}"
+        else:
+            last_traded_price_str = "Data Not Available"
     except Exception as e:
-    last_traded_price_str = "Data Not Available"
-    st.error(f"⚠️ Error fetching last traded price: {e}")
+        last_traded_price_str = "Data Not Available"
+        st.error(f"⚠️ Error fetching last traded price: {e}")
 
     # Calculate RSI
     delta = df['Close'].diff()
