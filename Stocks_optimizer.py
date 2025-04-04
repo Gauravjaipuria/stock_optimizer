@@ -7,17 +7,6 @@ import seaborn as sns
 from xgboost import XGBRegressor
 from sklearn.ensemble import RandomForestRegressor
 
-# Function to calculate RSI
-def calculate_rsi(data, window=14):
-    delta = data['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-    
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    
-    return rsi
-
 # Streamlit UI
 st.title("📈 AI-Powered Stock Portfolio Optimizer")
 
@@ -36,6 +25,15 @@ forecasted_prices = {}
 volatilities = {}
 trend_signals = {}
 
+# Function to calculate RSI
+def compute_rsi(series, period=14):
+    delta = series.diff(1)
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
 # Process Each Stock
 for stock in selected_stocks:
     df = yf.download(stock, period=f"{years_to_use}y", interval="1d", auto_adjust=True)
@@ -47,14 +45,8 @@ for stock in selected_stocks:
     df = df[['Close']]
     df.dropna(inplace=True)  # Ensure clean data
     
-    # RSI Calculation
-    df['RSI'] = calculate_rsi(df)
-    
     future_dates = pd.date_range(df.index[-1], periods=forecast_days + 1, freq='B')[1:]
 
-    # Last Traded Price
-    last_traded_price = df['Close'].iloc[-1]
-    
     # Calculate Moving Averages
     df['MA_50'] = df['Close'].rolling(window=50).mean()
     df['MA_200'] = df['Close'].rolling(window=200).mean()
@@ -62,10 +54,22 @@ for stock in selected_stocks:
     # AI Trend Prediction (Bullish/Bearish)
     if df['MA_50'].iloc[-1] > df['MA_200'].iloc[-1]:
         trend_signals[stock] = "Bullish 🟢 (Buy)"
-        trend_reason = "The 50-day moving average is above the 200-day moving average, indicating an upward trend."
+        trend_reason = "Short-term price momentum is stronger than long-term trend."
     else:
         trend_signals[stock] = "Bearish 🔴 (Sell)"
-        trend_reason = "The 50-day moving average is below the 200-day moving average, indicating a downward trend."
+        trend_reason = "Short-term price momentum is weaker than the long-term trend."
+
+    # Calculate RSI
+    df['RSI'] = compute_rsi(df['Close'])
+    latest_rsi = df['RSI'].iloc[-1]
+    
+    # RSI Recommendation
+    if latest_rsi < 30:
+        rsi_recommendation = "📈 Strong Buy (Oversold)"
+    elif 30 <= latest_rsi <= 70:
+        rsi_recommendation = "⏳ Hold (Neutral)"
+    else:
+        rsi_recommendation = "📉 Strong Sell (Overbought)"
 
     # Feature Engineering
     df['Lag_1'] = df['Close'].shift(1)
@@ -77,19 +81,30 @@ for stock in selected_stocks:
     # XGBoost Model
     xgb_model = XGBRegressor(objective='reg:squarederror', n_estimators=100)
     xgb_model.fit(train[['Lag_1']], train['Close'])
-    future_xgb = [xgb_model.predict(np.array([[df['Lag_1'].iloc[-1]]]).reshape(1, -1))[0] for _ in range(forecast_days)]
+    future_xgb = xgb_model.predict(np.array([[df['Lag_1'].iloc[-1]] for _ in range(forecast_days)]))
 
     # Random Forest Model
     rf_model = RandomForestRegressor(n_estimators=100)
     rf_model.fit(train[['Lag_1']], train['Close'])
-    future_rf = [rf_model.predict(np.array([[df['Lag_1'].iloc[-1]]]).reshape(1, -1))[0] for _ in range(forecast_days)]
+    future_rf = rf_model.predict(np.array([[df['Lag_1'].iloc[-1]] for _ in range(forecast_days)]))
 
-    # Calculate Volatility
-    volatilities[stock] = float(np.std(df['Close'].pct_change().dropna()))
-    forecasted_prices[stock] = future_xgb[-1]
+    # Last Traded Price
+    last_traded_price = df['Close'].iloc[-1] if not df.empty else None
+
+    # Display Analysis
+    st.subheader(f"📊 Forecast for {stock}")
+
+    if last_traded_price is not None:
+        st.write(f"📉 **Last Traded Price**: ₹{last_traded_price:.2f}")
+    else:
+        st.write("📉 **Last Traded Price**: Data not available")
+
+    st.write(f"📊 **RSI (14-day)**: {latest_rsi:.2f}")
+    st.write(f"📌 **Recommendation**: {rsi_recommendation}")
+    st.write(f"📢 **Trend Signal**: {trend_signals[stock]}")
+    st.write(f"💡 **Trend Reason**: {trend_reason}")
 
     # Plot Historical and Forecasted Prices
-    st.subheader(f"📊 Forecast for {stock}")
     plt.figure(figsize=(14, 7))
     sns.set_style("darkgrid")
     plt.plot(df.index, df['Close'], label=f'{stock} Historical', linewidth=2, color='black')
@@ -97,6 +112,15 @@ for stock in selected_stocks:
     plt.plot(df.index, df['MA_200'], label='200-Day MA', linestyle='dashed', color='purple')
     plt.plot(future_dates, future_xgb, label=f'{stock} Forecasted (XGBoost)', linestyle='dashed', color='red', marker='o')
     plt.plot(future_dates, future_rf, label=f'{stock} Forecasted (Random Forest)', linestyle='dashed', color='green', marker='x')
+
+    # Trend Line
+    try:
+        df = df.dropna()  # Ensure no NaN values
+        z = np.polyfit(range(len(df)), df['Close'].values.flatten(), 1)
+        p = np.poly1d(z)
+        plt.plot(df.index, p(range(len(df))), "--", label='Trend Line', color='orange')
+    except:
+        st.warning(f"Trend line could not be plotted for {stock}.")
 
     plt.legend(fontsize=12, loc='upper left', frameon=True, shadow=True, fancybox=True)
     plt.title(f"Historical and Forecasted Prices for {stock}", fontsize=16, fontweight='bold')
@@ -106,47 +130,3 @@ for stock in selected_stocks:
     plt.yticks(fontsize=12)
     plt.grid(True, linestyle='--', alpha=0.6)
     st.pyplot(plt)
-
-    # Display Analysis
-    st.write(f"📌 **{stock} Analysis**")
-    if last_traded_price is not None and isinstance(last_traded_price, (int, float)):
-    st.write(f"📉 **Last Traded Price**: ₹{last_traded_price:.2f}")
-        else:
-            st.write("📉 **Last Traded Price**: Data not available")
-    st.write(f"📊 **RSI**: {df['RSI'].iloc[-1]:.2f}")
-    st.write(f"📢 **Trend Prediction**: {trend_signals[stock]}")
-    st.write(f"💡 **Reason**: {trend_reason}")
-
-# Portfolio Optimization
-if forecasted_prices:
-    risk_allocation = {1: 0.7, 2: 0.5, 3: 0.3}  # Low Risk: 70% Safe, Medium: 50%, High: 30%
-    
-    allocation = {}
-    safe_stocks = []
-    risky_stocks = []
-    
-    for stock, vol in volatilities.items():
-        if vol > 0.03:
-            risky_stocks.append(stock)
-        else:
-            safe_stocks.append(stock)
-
-    # Investment split based on risk profile
-    risky_allocation = investment_amount * risk_allocation[risk_profile]
-    safe_allocation = investment_amount - risky_allocation
-
-    # Distribute investment
-    if risky_stocks:
-        per_risky_stock = risky_allocation / len(risky_stocks)
-        for stock in risky_stocks:
-            allocation[stock] = per_risky_stock
-    
-    if safe_stocks:
-        per_safe_stock = safe_allocation / len(safe_stocks)
-        for stock in safe_stocks:
-            allocation[stock] = per_safe_stock
-
-    # Display Optimized Stock Allocation
-    st.subheader("💰 Optimized Stock Allocation")
-    allocation_df = pd.DataFrame.from_dict(allocation, orient='index', columns=['Investment Amount (₹)'])
-    st.table(allocation_df)
