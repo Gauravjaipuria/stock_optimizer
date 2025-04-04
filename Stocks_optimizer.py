@@ -11,7 +11,7 @@ from sklearn.ensemble import RandomForestRegressor
 st.title("📈 AI-Powered Stock Portfolio Optimizer")
 
 # User Inputs
-country = st.radio("Select Market:", ["India", "America"])
+country = st.radio("Select Market:", ["India", "Other"])
 selected_stocks = st.text_input("Enter stock symbols (comma-separated):").strip().upper().split(',')
 selected_stocks = [stock.strip() + ".NS" if country == "India" else stock.strip() for stock in selected_stocks if stock]
 
