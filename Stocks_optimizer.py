@@ -17,13 +17,6 @@ selected_stocks = [stock.strip() + ".NS" if country == "India" else stock.strip(
 
 years_to_use = st.number_input("Enter number of years for historical data:", min_value=1, max_value=10, value=2)
 forecast_days = st.number_input("Enter forecast period (in days):", min_value=1, max_value=365, value=30)
-investment_amount = st.number_input("Enter total investment amount (₹):", min_value=1000.0, value=50000.0)
-risk_profile = st.radio("Select your risk level:", [1, 2, 3], format_func=lambda x: {1: "Low", 2: "Medium", 3: "High"}[x])
-
-# Initialize Storage
-forecasted_prices = {}
-volatilities = {}
-trend_signals = {}
 
 # Function to calculate RSI
 def compute_rsi(series, period=14):
@@ -47,16 +40,16 @@ for stock in selected_stocks:
     
     future_dates = pd.date_range(df.index[-1], periods=forecast_days + 1, freq='B')[1:]
 
-    # Calculate Moving Averages
+    # Moving Averages
     df['MA_50'] = df['Close'].rolling(window=50).mean()
     df['MA_200'] = df['Close'].rolling(window=200).mean()
 
-    # AI Trend Prediction (Bullish/Bearish)
+    # AI Trend Prediction
     if df['MA_50'].iloc[-1] > df['MA_200'].iloc[-1]:
-        trend_signals[stock] = "Bullish 🟢 (Buy)"
+        trend_signal = "Bullish 🟢 (Buy)"
         trend_reason = "Short-term price momentum is stronger than long-term trend."
     else:
-        trend_signals[stock] = "Bearish 🔴 (Sell)"
+        trend_signal = "Bearish 🔴 (Sell)"
         trend_reason = "Short-term price momentum is weaker than the long-term trend."
 
     # Calculate RSI
@@ -88,20 +81,16 @@ for stock in selected_stocks:
     rf_model.fit(train[['Lag_1']], train['Close'])
     future_rf = rf_model.predict(np.array([[df['Lag_1'].iloc[-1]] for _ in range(forecast_days)]))
 
-    # Last Traded Price
+    # Last Traded Price Handling (Fixes TypeError)
     last_traded_price = df['Close'].iloc[-1] if not df.empty else None
+    last_traded_price_str = f"₹{last_traded_price:.2f}" if pd.notna(last_traded_price) else "Data Not Available"
 
     # Display Analysis
     st.subheader(f"📊 Forecast for {stock}")
-
-    if last_traded_price is not None:
-        st.write(f"📉 **Last Traded Price**: ₹{last_traded_price:.2f}")
-    else:
-        st.write("📉 **Last Traded Price**: Data not available")
-
+    st.write(f"📉 **Last Traded Price**: {last_traded_price_str}")
     st.write(f"📊 **RSI (14-day)**: {latest_rsi:.2f}")
     st.write(f"📌 **Recommendation**: {rsi_recommendation}")
-    st.write(f"📢 **Trend Signal**: {trend_signals[stock]}")
+    st.write(f"📢 **Trend Signal**: {trend_signal}")
     st.write(f"💡 **Trend Reason**: {trend_reason}")
 
     # Plot Historical and Forecasted Prices
@@ -112,15 +101,6 @@ for stock in selected_stocks:
     plt.plot(df.index, df['MA_200'], label='200-Day MA', linestyle='dashed', color='purple')
     plt.plot(future_dates, future_xgb, label=f'{stock} Forecasted (XGBoost)', linestyle='dashed', color='red', marker='o')
     plt.plot(future_dates, future_rf, label=f'{stock} Forecasted (Random Forest)', linestyle='dashed', color='green', marker='x')
-
-    # Trend Line
-    try:
-        df = df.dropna()  # Ensure no NaN values
-        z = np.polyfit(range(len(df)), df['Close'].values.flatten(), 1)
-        p = np.poly1d(z)
-        plt.plot(df.index, p(range(len(df))), "--", label='Trend Line', color='orange')
-    except:
-        st.warning(f"Trend line could not be plotted for {stock}.")
 
     plt.legend(fontsize=12, loc='upper left', frameon=True, shadow=True, fancybox=True)
     plt.title(f"Historical and Forecasted Prices for {stock}", fontsize=16, fontweight='bold')
