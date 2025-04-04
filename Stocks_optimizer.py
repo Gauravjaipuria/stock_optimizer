@@ -24,7 +24,6 @@ risk_profile = st.radio("Select your risk level:", [1, 2, 3], format_func=lambda
 forecasted_prices = {}
 volatilities = {}
 trend_signals = {}
-forecasted_models = {}
 
 # Process Each Stock
 for stock in selected_stocks:
@@ -66,10 +65,9 @@ for stock in selected_stocks:
     rf_model.fit(train[['Lag_1']], train['Close'])
     future_rf = [rf_model.predict(np.array([[df['Lag_1'].iloc[-1]]]).reshape(1, -1))[0] for _ in range(forecast_days)]
 
-    # Store Forecasts
+    # Calculate Volatility
     volatilities[stock] = float(np.std(df['Close'].pct_change().dropna()))
     forecasted_prices[stock] = future_xgb[-1]
-    forecasted_models[stock] = {"XGBoost": future_xgb[-1], "Random Forest": future_rf[-1]}
 
     # Plot Historical and Forecasted Prices
     st.subheader(f"📊 Forecast for {stock}")
@@ -81,6 +79,15 @@ for stock in selected_stocks:
     plt.plot(future_dates, future_xgb, label=f'{stock} Forecasted (XGBoost)', linestyle='dashed', color='red', marker='o')
     plt.plot(future_dates, future_rf, label=f'{stock} Forecasted (Random Forest)', linestyle='dashed', color='green', marker='x')
 
+    # *Trend Line Fix*
+    try:
+        df = df.dropna()  # Ensure no NaN values
+        z = np.polyfit(range(len(df)), df['Close'].values.flatten(), 1)
+        p = np.poly1d(z)
+        plt.plot(df.index, p(range(len(df))), "--", label='Trend Line', color='orange')
+    except:
+        st.warning(f"Trend line could not be plotted for {stock}.")
+
     plt.legend(fontsize=12, loc='upper left', frameon=True, shadow=True, fancybox=True)
     plt.title(f"Historical and Forecasted Prices for {stock}", fontsize=16, fontweight='bold')
     plt.xlabel("Date", fontsize=14)
@@ -90,7 +97,7 @@ for stock in selected_stocks:
     plt.grid(True, linestyle='--', alpha=0.6)
     st.pyplot(plt)
 
-# Portfolio Optimization
+# Portfolio Optimization (Enhanced with % Allocation)
 if forecasted_prices:
     risk_allocation = {1: 0.7, 2: 0.5, 3: 0.3}  # Low Risk: 70% Safe, Medium: 50%, High: 30%
     
@@ -119,18 +126,30 @@ if forecasted_prices:
         for stock in safe_stocks:
             allocation[stock] = per_safe_stock
 
+    # Convert allocation to percentage
+    allocation_df = pd.DataFrame.from_dict(allocation, orient='index', columns=['Investment Amount (₹)'])
+    allocation_df['Percentage Allocation (%)'] = (allocation_df['Investment Amount (₹)'] / investment_amount) * 100
+
     # Display Optimized Stock Allocation
     st.subheader("💰 Optimized Stock Allocation")
-    allocation_df = pd.DataFrame.from_dict(allocation, orient='index', columns=['Investment Amount (₹)'])
     st.table(allocation_df)
 
-# Display Forecasted Prices from Different Models
-if forecasted_models:
-    forecast_df = pd.DataFrame.from_dict(forecasted_models, orient="index")
-    st.subheader("🔮 AI-Based Stock Forecasts")
-    st.table(forecast_df)
+    # Risk Classification
+    def classify_risk_level(volatility):
+        volatility = float(volatility)
+        if volatility > 0.03:
+            return "3 (High Risk)"
+        elif 0.01 < volatility <= 0.03:
+            return "2 (Medium Risk)"
+        else:
+            return "1 (Low Risk)"
 
-# Display AI-Based Trend Predictions
-st.subheader("📢 AI Trend Predictions")
-trend_df = pd.DataFrame.from_dict(trend_signals, orient='index', columns=['Trend Signal'])
-st.table(trend_df)
+    risk_levels = {stock: classify_risk_level(vol) for stock, vol in volatilities.items()}
+    risk_df = pd.DataFrame.from_dict(risk_levels, orient='index', columns=['Risk Level'])
+    st.subheader("⚠️ Risk Levels in Investment")
+    st.table(risk_df)
+
+    # Display AI-Based Trend Predictions
+    st.subheader("📢 AI Trend Predictions")
+    trend_df = pd.DataFrame.from_dict(trend_signals, orient='index', columns=['Trend Signal'])
+    st.table(trend_df)
