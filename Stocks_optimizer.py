@@ -43,7 +43,7 @@ for stock in selected_stocks:
         last_traded_price_str = f"₹{last_traded_price:.2f}"
     else:
         last_traded_price_str = "Data Not Available"
-except Exception as e:
+    except Exception as e:
     last_traded_price_str = "Data Not Available"
     st.error(f"⚠️ Error fetching last traded price: {e}")
 
