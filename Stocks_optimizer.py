@@ -109,7 +109,10 @@ for stock in selected_stocks:
 
     # Display Analysis
     st.write(f"📌 **{stock} Analysis**")
+    if last_traded_price is not None and isinstance(last_traded_price, (int, float)):
     st.write(f"📉 **Last Traded Price**: ₹{last_traded_price:.2f}")
+        else:
+            st.write("📉 **Last Traded Price**: Data not available")
     st.write(f"📊 **RSI**: {df['RSI'].iloc[-1]:.2f}")
     st.write(f"📢 **Trend Prediction**: {trend_signals[stock]}")
     st.write(f"💡 **Reason**: {trend_reason}")
