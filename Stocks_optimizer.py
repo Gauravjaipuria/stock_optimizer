@@ -17,15 +17,13 @@ selected_stocks = [stock.strip() + ".NS" if country == "India" else stock.strip(
 
 years_to_use = st.number_input("Enter number of years for historical data:", min_value=1, max_value=10, value=2)
 forecast_days = st.number_input("Enter forecast period (in days):", min_value=1, max_value=365, value=30)
+investment_amount = st.number_input("Enter total investment amount (₹):", min_value=1000.0, value=50000.0)
+risk_profile = st.radio("Select your risk level:", [1, 2, 3], format_func=lambda x: {1: "Low", 2: "Medium", 3: "High"}[x])
 
-# Function to calculate RSI
-def compute_rsi(series, period=14):
-    delta = series.diff(1)
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
+# Initialize Storage
+forecasted_prices = {}
+volatilities = {}
+trend_signals = {}
 
 # Process Each Stock
 for stock in selected_stocks:
@@ -37,32 +35,45 @@ for stock in selected_stocks:
 
     df = df[['Close']]
     df.dropna(inplace=True)  # Ensure clean data
-    
+
+    # Get Last Traded Price
+    try:
+        last_traded_price = float(df['Close'].iloc[-1]) if not pd.isna(df['Close'].iloc[-1]) else None
+        last_traded_price_str = f"₹{last_traded_price:.2f}" if last_traded_price is not None else "Data Not Available"
+    except Exception as e:
+        last_traded_price_str = "Data Not Available"
+        st.error(f"⚠️ Error fetching last traded price: {e}")
+
+    # Calculate RSI
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+    latest_rsi = df['RSI'].iloc[-1] if not pd.isna(df['RSI'].iloc[-1]) else None
+
+    # RSI-Based Recommendation
+    if latest_rsi is not None:
+        if latest_rsi > 70:
+            recommendation = "Overbought 🔴 (Sell)"
+        elif latest_rsi < 30:
+            recommendation = "Oversold 🟢 (Buy)"
+        else:
+            recommendation = "Neutral ⚪ (Hold)"
+    else:
+        recommendation = "RSI Data Unavailable"
+
     future_dates = pd.date_range(df.index[-1], periods=forecast_days + 1, freq='B')[1:]
 
-    # Moving Averages
+    # Calculate Moving Averages
     df['MA_50'] = df['Close'].rolling(window=50).mean()
     df['MA_200'] = df['Close'].rolling(window=200).mean()
 
-    # AI Trend Prediction
+    # AI Trend Prediction (Bullish/Bearish)
     if df['MA_50'].iloc[-1] > df['MA_200'].iloc[-1]:
-        trend_signal = "Bullish 🟢 (Buy)"
-        trend_reason = "Short-term price momentum is stronger than long-term trend."
+        trend_signals[stock] = "Bullish 🟢 (Buy) - Short-term trend is up"
     else:
-        trend_signal = "Bearish 🔴 (Sell)"
-        trend_reason = "Short-term price momentum is weaker than the long-term trend."
-
-    # Calculate RSI
-    df['RSI'] = compute_rsi(df['Close'])
-    latest_rsi = df['RSI'].iloc[-1]
-    
-    # RSI Recommendation
-    if latest_rsi < 30:
-        rsi_recommendation = "📈 Strong Buy (Oversold)"
-    elif 30 <= latest_rsi <= 70:
-        rsi_recommendation = "⏳ Hold (Neutral)"
-    else:
-        rsi_recommendation = "📉 Strong Sell (Overbought)"
+        trend_signals[stock] = "Bearish 🔴 (Sell) - Long-term trend is stronger"
 
     # Feature Engineering
     df['Lag_1'] = df['Close'].shift(1)
@@ -74,26 +85,25 @@ for stock in selected_stocks:
     # XGBoost Model
     xgb_model = XGBRegressor(objective='reg:squarederror', n_estimators=100)
     xgb_model.fit(train[['Lag_1']], train['Close'])
-    future_xgb = xgb_model.predict(np.array([[df['Lag_1'].iloc[-1]] for _ in range(forecast_days)]))
+    future_xgb = [xgb_model.predict(np.array([[df['Lag_1'].iloc[-1]]]).reshape(1, -1))[0] for _ in range(forecast_days)]
 
     # Random Forest Model
     rf_model = RandomForestRegressor(n_estimators=100)
     rf_model.fit(train[['Lag_1']], train['Close'])
-    future_rf = rf_model.predict(np.array([[df['Lag_1'].iloc[-1]] for _ in range(forecast_days)]))
+    future_rf = [rf_model.predict(np.array([[df['Lag_1'].iloc[-1]]]).reshape(1, -1))[0] for _ in range(forecast_days)]
 
-    # Last Traded Price Handling (Fixes TypeError)
-    last_traded_price = df['Close'].iloc[-1] if not df.empty else None
-    last_traded_price_str = f"₹{last_traded_price:.2f}" if pd.notna(last_traded_price) else "Data Not Available"
+    # Calculate Volatility
+    volatilities[stock] = float(np.std(df['Close'].pct_change().dropna()))
+    forecasted_prices[stock] = future_xgb[-1]
 
-    # Display Analysis
-    st.subheader(f"📊 Forecast for {stock}")
+    # Display Stock Info
+    st.subheader(f"📌 {stock} Analysis")
     st.write(f"📉 **Last Traded Price**: {last_traded_price_str}")
-    st.write(f"📊 **RSI (14-day)**: {latest_rsi:.2f}")
-    st.write(f"📌 **Recommendation**: {rsi_recommendation}")
-    st.write(f"📢 **Trend Signal**: {trend_signal}")
-    st.write(f"💡 **Trend Reason**: {trend_reason}")
+    st.write(f"📊 **RSI**: {latest_rsi:.2f}" if latest_rsi is not None else "📊 RSI Data Unavailable")
+    st.write(f"📢 **Recommendation**: {recommendation}")
 
     # Plot Historical and Forecasted Prices
+    st.subheader(f"📊 Forecast for {stock}")
     plt.figure(figsize=(14, 7))
     sns.set_style("darkgrid")
     plt.plot(df.index, df['Close'], label=f'{stock} Historical', linewidth=2, color='black')
@@ -101,6 +111,14 @@ for stock in selected_stocks:
     plt.plot(df.index, df['MA_200'], label='200-Day MA', linestyle='dashed', color='purple')
     plt.plot(future_dates, future_xgb, label=f'{stock} Forecasted (XGBoost)', linestyle='dashed', color='red', marker='o')
     plt.plot(future_dates, future_rf, label=f'{stock} Forecasted (Random Forest)', linestyle='dashed', color='green', marker='x')
+
+    try:
+        df = df.dropna()  # Ensure no NaN values
+        z = np.polyfit(range(len(df)), df['Close'].values.flatten(), 1)
+        p = np.poly1d(z)
+        plt.plot(df.index, p(range(len(df))), "--", label='Trend Line', color='orange')
+    except:
+        st.warning(f"Trend line could not be plotted for {stock}.")
 
     plt.legend(fontsize=12, loc='upper left', frameon=True, shadow=True, fancybox=True)
     plt.title(f"Historical and Forecasted Prices for {stock}", fontsize=16, fontweight='bold')
@@ -110,3 +128,8 @@ for stock in selected_stocks:
     plt.yticks(fontsize=12)
     plt.grid(True, linestyle='--', alpha=0.6)
     st.pyplot(plt)
+
+# Display AI-Based Trend Predictions
+st.subheader("📢 AI Trend Predictions")
+trend_df = pd.DataFrame.from_dict(trend_signals, orient='index', columns=['Trend Signal'])
+st.table(trend_df)
