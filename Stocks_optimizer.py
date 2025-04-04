@@ -7,6 +7,17 @@ import seaborn as sns
 from xgboost import XGBRegressor
 from sklearn.ensemble import RandomForestRegressor
 
+# Function to calculate RSI
+def calculate_rsi(data, window=14):
+    delta = data['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+    
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    
+    return rsi
+
 # Streamlit UI
 st.title("📈 AI-Powered Stock Portfolio Optimizer")
 
@@ -24,7 +35,6 @@ risk_profile = st.radio("Select your risk level:", [1, 2, 3], format_func=lambda
 forecasted_prices = {}
 volatilities = {}
 trend_signals = {}
-rsi_values = {}
 
 # Process Each Stock
 for stock in selected_stocks:
@@ -37,32 +47,27 @@ for stock in selected_stocks:
     df = df[['Close']]
     df.dropna(inplace=True)  # Ensure clean data
     
-    # Last Closing Price
-    last_closing_price = df['Close'].iloc[-1]
-
-    # Calculate RSI
-    window = 14
-    delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-    rs = gain / loss
-    df['RSI'] = 100 - (100 / (1 + rs))
+    # RSI Calculation
+    df['RSI'] = calculate_rsi(df)
     
-    latest_rsi = df['RSI'].iloc[-1]
-    rsi_values[stock] = latest_rsi
+    future_dates = pd.date_range(df.index[-1], periods=forecast_days + 1, freq='B')[1:]
 
-    # RSI-Based Recommendation
-    if latest_rsi < 30:
-        trend_signals[stock] = "Oversold 🟢 (Buy)"
-        reason = "Stock is oversold based on RSI, potential buying opportunity."
-    elif latest_rsi > 70:
-        trend_signals[stock] = "Overbought 🔴 (Sell)"
-        reason = "Stock is overbought based on RSI, potential downside risk."
+    # Last Traded Price
+    last_traded_price = df['Close'].iloc[-1]
+    
+    # Calculate Moving Averages
+    df['MA_50'] = df['Close'].rolling(window=50).mean()
+    df['MA_200'] = df['Close'].rolling(window=200).mean()
+
+    # AI Trend Prediction (Bullish/Bearish)
+    if df['MA_50'].iloc[-1] > df['MA_200'].iloc[-1]:
+        trend_signals[stock] = "Bullish 🟢 (Buy)"
+        trend_reason = "The 50-day moving average is above the 200-day moving average, indicating an upward trend."
     else:
-        trend_signals[stock] = "Neutral ⚪ (Hold)"
-        reason = "Stock is in a neutral zone based on RSI."
+        trend_signals[stock] = "Bearish 🔴 (Sell)"
+        trend_reason = "The 50-day moving average is below the 200-day moving average, indicating a downward trend."
 
-    # Feature Engineering for Forecasting
+    # Feature Engineering
     df['Lag_1'] = df['Close'].shift(1)
     df.dropna(inplace=True)
 
@@ -85,16 +90,13 @@ for stock in selected_stocks:
 
     # Plot Historical and Forecasted Prices
     st.subheader(f"📊 Forecast for {stock}")
-    future_dates = pd.date_range(df.index[-1], periods=forecast_days + 1, freq='B')[1:]
-
     plt.figure(figsize=(14, 7))
     sns.set_style("darkgrid")
     plt.plot(df.index, df['Close'], label=f'{stock} Historical', linewidth=2, color='black')
-    plt.plot(df.index, future_xgb, label=f'{stock} Forecasted (XGBoost)', linestyle='dashed', color='red', marker='o')
-    plt.plot(df.index, future_rf, label=f'{stock} Forecasted (Random Forest)', linestyle='dashed', color='green', marker='x')
-
-    # Trend Reason
-    plt.text(df.index[-1], df['Close'].iloc[-1], reason, fontsize=12, color="blue")
+    plt.plot(df.index, df['MA_50'], label='50-Day MA', linestyle='dashed', color='blue')
+    plt.plot(df.index, df['MA_200'], label='200-Day MA', linestyle='dashed', color='purple')
+    plt.plot(future_dates, future_xgb, label=f'{stock} Forecasted (XGBoost)', linestyle='dashed', color='red', marker='o')
+    plt.plot(future_dates, future_rf, label=f'{stock} Forecasted (Random Forest)', linestyle='dashed', color='green', marker='x')
 
     plt.legend(fontsize=12, loc='upper left', frameon=True, shadow=True, fancybox=True)
     plt.title(f"Historical and Forecasted Prices for {stock}", fontsize=16, fontweight='bold')
@@ -104,6 +106,13 @@ for stock in selected_stocks:
     plt.yticks(fontsize=12)
     plt.grid(True, linestyle='--', alpha=0.6)
     st.pyplot(plt)
+
+    # Display Analysis
+    st.write(f"📌 **{stock} Analysis**")
+    st.write(f"📉 **Last Traded Price**: ₹{last_traded_price:.2f}")
+    st.write(f"📊 **RSI**: {df['RSI'].iloc[-1]:.2f}")
+    st.write(f"📢 **Trend Prediction**: {trend_signals[stock]}")
+    st.write(f"💡 **Reason**: {trend_reason}")
 
 # Portfolio Optimization
 if forecasted_prices:
@@ -134,28 +143,7 @@ if forecasted_prices:
         for stock in safe_stocks:
             allocation[stock] = per_safe_stock
 
-    # Ensure total allocation sums to 100%
-    total_allocation = sum(allocation.values())
-    allocation_percentage = {stock: round((amount / total_allocation) * 100, 2) for stock, amount in allocation.items()}
-
-    # Adjust first stock to correct rounding errors
-    total_percentage = sum(allocation_percentage.values())
-    if total_percentage != 100:
-        first_stock = next(iter(allocation_percentage))
-        allocation_percentage[first_stock] += 100 - total_percentage
-
     # Display Optimized Stock Allocation
     st.subheader("💰 Optimized Stock Allocation")
     allocation_df = pd.DataFrame.from_dict(allocation, orient='index', columns=['Investment Amount (₹)'])
-    allocation_df["Percentage (%)"] = allocation_df.index.map(lambda stock: allocation_percentage[stock])
     st.table(allocation_df)
-
-    # Display RSI Values
-    st.subheader("📉 RSI Values")
-    rsi_df = pd.DataFrame.from_dict(rsi_values, orient='index', columns=['RSI Value'])
-    st.table(rsi_df)
-
-    # Display AI-Based Trend Predictions
-    st.subheader("📢 AI Trend Predictions")
-    trend_df = pd.DataFrame.from_dict(trend_signals, orient='index', columns=['Trend Signal'])
-    st.table(trend_df)
