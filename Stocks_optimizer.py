@@ -34,8 +34,8 @@ for stock in selected_stocks:
         continue
 
     df = df[['Close']]
-    df.dropna(inplace=True)
-
+    df.dropna(inplace=True)  # Ensure clean data
+    
     future_dates = pd.date_range(df.index[-1], periods=forecast_days + 1, freq='B')[1:]
 
     # Calculate Moving Averages
@@ -43,7 +43,10 @@ for stock in selected_stocks:
     df['MA_200'] = df['Close'].rolling(window=200).mean()
 
     # AI Trend Prediction (Bullish/Bearish)
-    trend_signals[stock] = "Bullish 🟢 (Buy)" if df['MA_50'].iloc[-1] > df['MA_200'].iloc[-1] else "Bearish 🔴 (Sell)"
+    if df['MA_50'].iloc[-1] > df['MA_200'].iloc[-1]:
+        trend_signals[stock] = "Bullish 🟢 (Buy)"
+    else:
+        trend_signals[stock] = "Bearish 🔴 (Sell)"
 
     # Feature Engineering
     df['Lag_1'] = df['Close'].shift(1)
@@ -64,12 +67,7 @@ for stock in selected_stocks:
 
     # Calculate Volatility
     volatilities[stock] = float(np.std(df['Close'].pct_change().dropna()))
-
-    # ⬇️ Round forecasted prices to 2 decimal places
-    forecasted_prices[stock] = {
-        "XGBoost": round(future_xgb[-1], 2),
-        "RandomForest": round(future_rf[-1], 2)
-    }
+    forecasted_prices[stock] = future_xgb[-1]
 
     # Plot Historical and Forecasted Prices
     st.subheader(f"📊 Forecast for {stock}")
@@ -81,6 +79,15 @@ for stock in selected_stocks:
     plt.plot(future_dates, future_xgb, label=f'{stock} Forecasted (XGBoost)', linestyle='dashed', color='red', marker='o')
     plt.plot(future_dates, future_rf, label=f'{stock} Forecasted (Random Forest)', linestyle='dashed', color='green', marker='x')
 
+    # *Trend Line Fix*
+    try:
+        df = df.dropna()  # Ensure no NaN values
+        z = np.polyfit(range(len(df)), df['Close'].values.flatten(), 1)
+        p = np.poly1d(z)
+        plt.plot(df.index, p(range(len(df))), "--", label='Trend Line', color='orange')
+    except:
+        st.warning(f"Trend line could not be plotted for {stock}.")
+
     plt.legend(fontsize=12, loc='upper left', frameon=True, shadow=True, fancybox=True)
     plt.title(f"Historical and Forecasted Prices for {stock}", fontsize=16, fontweight='bold')
     plt.xlabel("Date", fontsize=14)
@@ -90,30 +97,50 @@ for stock in selected_stocks:
     plt.grid(True, linestyle='--', alpha=0.6)
     st.pyplot(plt)
 
-# Portfolio Allocation (Ensuring 100% Distribution)
+# Portfolio Optimization
 if forecasted_prices:
-    weights = np.array([1 / len(forecasted_prices)] * len(forecasted_prices))  # Equal weight distribution
-    weights = weights / np.sum(weights)  # Normalize to ensure sum is 100%
+    risk_allocation = {1: 0.7, 2: 0.5, 3: 0.3}  # Low Risk: 70% Safe, Medium: 50%, High: 30%
+    
+    allocation = {}
+    safe_stocks = []
+    risky_stocks = []
+    
+    for stock, vol in volatilities.items():
+        if vol > 0.03:
+            risky_stocks.append(stock)
+        else:
+            safe_stocks.append(stock)
 
-    allocation = {stock: investment_amount * weight for stock, weight in zip(forecasted_prices.keys(), weights)}
+    # Investment split based on risk profile
+    risky_allocation = investment_amount * risk_allocation[risk_profile]
+    safe_allocation = investment_amount - risky_allocation
 
-    # Convert allocation to percentage
-    allocation_df = pd.DataFrame.from_dict(allocation, orient='index', columns=['Investment Amount (₹)'])
-    allocation_df['Percentage Allocation (%)'] = (allocation_df['Investment Amount (₹)'] / investment_amount) * 100
+    # Distribute investment
+    if risky_stocks:
+        per_risky_stock = risky_allocation / len(risky_stocks)
+        for stock in risky_stocks:
+            allocation[stock] = per_risky_stock
+    
+    if safe_stocks:
+        per_safe_stock = safe_allocation / len(safe_stocks)
+        for stock in safe_stocks:
+            allocation[stock] = per_safe_stock
+
+    # Ensure total allocation sums to 100%
+    total_allocation = sum(allocation.values())
+    allocation_percentage = {stock: round((amount / total_allocation) * 100, 2) for stock, amount in allocation.items()}
+
+    # Adjust first stock to correct rounding errors
+    total_percentage = sum(allocation_percentage.values())
+    if total_percentage != 100:
+        first_stock = next(iter(allocation_percentage))
+        allocation_percentage[first_stock] += 100 - total_percentage
 
     # Display Optimized Stock Allocation
-    st.subheader("💰 Optimized Stock Allocation (100% Distributed)")
+    st.subheader("💰 Optimized Stock Allocation")
+    allocation_df = pd.DataFrame.from_dict(allocation, orient='index', columns=['Investment Amount (₹)'])
+    allocation_df["Percentage (%)"] = allocation_df.index.map(lambda stock: allocation_percentage[stock])
     st.table(allocation_df)
-
-    # Display AI-Based Trend Predictions
-    st.subheader("📢 AI Trend Predictions")
-    trend_df = pd.DataFrame.from_dict(trend_signals, orient='index', columns=['Trend Signal'])
-    st.table(trend_df)
-
-    # Display Forecasted Prices
-    st.subheader("🔮 Forecasted Prices")
-    forecast_df = pd.DataFrame.from_dict(forecasted_prices, orient='index')
-    st.table(forecast_df)
 
     # Risk Classification
     def classify_risk_level(volatility):
@@ -129,3 +156,8 @@ if forecasted_prices:
     risk_df = pd.DataFrame.from_dict(risk_levels, orient='index', columns=['Risk Level'])
     st.subheader("⚠️ Risk Levels in Investment")
     st.table(risk_df)
+
+    # Display AI-Based Trend Predictions
+    st.subheader("📢 AI Trend Predictions")
+    trend_df = pd.DataFrame.from_dict(trend_signals, orient='index', columns=['Trend Signal'])
+    st.table(trend_df)
