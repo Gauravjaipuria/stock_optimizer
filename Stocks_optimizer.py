@@ -111,7 +111,7 @@ if forecasted_prices:
     st.table(trend_df)
 
     # Display Forecasted Prices
-    st.subheader("🔮 Forecasted Prices (Last Prediction)")
+    st.subheader("🔮 Forecasted Prices")
     forecast_df = pd.DataFrame.from_dict(forecasted_prices, orient='index')
     st.table(forecast_df)
 
