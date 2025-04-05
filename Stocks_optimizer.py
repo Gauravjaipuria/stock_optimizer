@@ -84,7 +84,7 @@ for stock in selected_stocks:
 
     forecast_table.append({
         "Stock": stock.replace(".NS", ""),
-        "Latest Price": round(latest_price, 2),
+        "Latest Price": round(latest_prices[stock], 2),
         "XGBoost": round(future_xgb[-1], 2),
         "RandomForest": round(future_rf[-1], 2)
     })
