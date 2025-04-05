@@ -64,7 +64,10 @@ for stock in selected_stocks:
 
     # Calculate Volatility
     volatilities[stock] = float(np.std(df['Close'].pct_change().dropna()))
-    forecasted_prices[stock] = {"XGBoost": future_xgb[-1], "RandomForest": future_rf[-1]}
+    forecasted_prices[stock] = {
+    "XGBoost": round(future_xgb[-1], 2),
+    "RandomForest": round(future_rf[-1], 2)
+    }
 
     # Plot Historical and Forecasted Prices
     st.subheader(f"📊 Forecast for {stock}")
