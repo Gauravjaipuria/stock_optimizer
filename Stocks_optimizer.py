@@ -35,7 +35,11 @@ for stock in selected_stocks:
 
     df = df[['Close']]
     df.dropna(inplace=True)  # Ensure clean data
-    
+
+    # ✅ Show Latest Price
+    latest_price = df['Close'].iloc[-1]
+    st.metric(label=f"💵 Latest Price of {stock}", value=f"₹{latest_price:.2f}")
+
     future_dates = pd.date_range(df.index[-1], periods=forecast_days + 1, freq='B')[1:]
 
     # Calculate Moving Averages
@@ -79,7 +83,7 @@ for stock in selected_stocks:
     plt.plot(future_dates, future_xgb, label=f'{stock} Forecasted (XGBoost)', linestyle='dashed', color='red', marker='o')
     plt.plot(future_dates, future_rf, label=f'{stock} Forecasted (Random Forest)', linestyle='dashed', color='green', marker='x')
 
-    # *Trend Line Fix*
+    # Trend Line
     try:
         df = df.dropna()  # Ensure no NaN values
         z = np.polyfit(range(len(df)), df['Close'].values.flatten(), 1)
@@ -99,7 +103,7 @@ for stock in selected_stocks:
 
 # Portfolio Optimization
 if forecasted_prices:
-    risk_allocation = {1: 0.7, 2: 0.5, 3: 0.3}  # Low Risk: 70% Safe, Medium: 50%, High: 30%
+    risk_allocation = {1: 0.7, 2: 0.5, 3: 0.3}
     
     allocation = {}
     safe_stocks = []
@@ -111,11 +115,9 @@ if forecasted_prices:
         else:
             safe_stocks.append(stock)
 
-    # Investment split based on risk profile
     risky_allocation = investment_amount * risk_allocation[risk_profile]
     safe_allocation = investment_amount - risky_allocation
 
-    # Distribute investment
     if risky_stocks:
         per_risky_stock = risky_allocation / len(risky_stocks)
         for stock in risky_stocks:
@@ -126,23 +128,19 @@ if forecasted_prices:
         for stock in safe_stocks:
             allocation[stock] = per_safe_stock
 
-    # Ensure total allocation sums to 100%
     total_allocation = sum(allocation.values())
     allocation_percentage = {stock: round((amount / total_allocation) * 100, 2) for stock, amount in allocation.items()}
 
-    # Adjust first stock to correct rounding errors
     total_percentage = sum(allocation_percentage.values())
     if total_percentage != 100:
         first_stock = next(iter(allocation_percentage))
         allocation_percentage[first_stock] += 100 - total_percentage
 
-    # Display Optimized Stock Allocation
     st.subheader("💰 Optimized Stock Allocation")
     allocation_df = pd.DataFrame.from_dict(allocation, orient='index', columns=['Investment Amount (₹)'])
     allocation_df["Percentage (%)"] = allocation_df.index.map(lambda stock: allocation_percentage[stock])
     st.table(allocation_df)
 
-    # Risk Classification
     def classify_risk_level(volatility):
         volatility = float(volatility)
         if volatility > 0.03:
@@ -157,7 +155,6 @@ if forecasted_prices:
     st.subheader("⚠️ Risk Levels in Investment")
     st.table(risk_df)
 
-    # Display AI-Based Trend Predictions
     st.subheader("📢 AI Trend Predictions")
     trend_df = pd.DataFrame.from_dict(trend_signals, orient='index', columns=['Trend Signal'])
     st.table(trend_df)
