@@ -24,6 +24,7 @@ risk_profile = st.radio("Select your risk level:", [1, 2, 3], format_func=lambda
 forecasted_prices = {}
 volatilities = {}
 trend_signals = {}
+latest_prices = {}
 forecast_table = []
 
 # Process Each Stock
@@ -34,17 +35,25 @@ for stock in selected_stocks:
         st.warning(f"Skipping {stock}: No valid data available.")
         continue
 
+    # Fetch today's price
+    try:
+        today_df = yf.download(stock, period="1d", interval="1d", auto_adjust=True)
+        latest_price = today_df['Close'].iloc[-1]
+        latest_prices[stock] = latest_price
+    except:
+        st.warning(f"Couldn't fetch latest price for {stock}")
+        latest_prices[stock] = np.nan
+
     df = df[['Close']]
     df.dropna(inplace=True)
-    
-    latest_price = df['Close'].iloc[-1]
+
     future_dates = pd.date_range(df.index[-1], periods=forecast_days + 1, freq='B')[1:]
 
-    # Moving Averages
+    # Calculate Moving Averages
     df['MA_50'] = df['Close'].rolling(window=50).mean()
     df['MA_200'] = df['Close'].rolling(window=200).mean()
 
-    # Trend Signal
+    # AI Trend Prediction
     if df['MA_50'].iloc[-1] > df['MA_200'].iloc[-1]:
         trend_signals[stock] = "Bullish 🟢 (Buy)"
     else:
@@ -53,6 +62,7 @@ for stock in selected_stocks:
     # Feature Engineering
     df['Lag_1'] = df['Close'].shift(1)
     df.dropna(inplace=True)
+
     train_size = int(len(df) * 0.8)
     train, test = df.iloc[:train_size], df.iloc[train_size:]
 
@@ -66,28 +76,30 @@ for stock in selected_stocks:
     rf_model.fit(train[['Lag_1']], train['Close'])
     future_rf = [rf_model.predict(np.array([[df['Lag_1'].iloc[-1]]]).reshape(1, -1))[0] for _ in range(forecast_days)]
 
-    # Save volatility & forecast
     volatilities[stock] = float(np.std(df['Close'].pct_change().dropna()))
-    forecasted_prices[stock] = future_xgb[-1]
+    forecasted_prices[stock] = {
+        "XGBoost": future_xgb[-1],
+        "RandomForest": future_rf[-1]
+    }
 
-    # Add to Forecast Table
     forecast_table.append({
         "Stock": stock.replace(".NS", ""),
         "Latest Price": round(latest_price, 2),
-        "XGBoost": round(future_xgb[-1], 4),
-        "RandomForest": round(future_rf[-1], 4)
+        "XGBoost": round(future_xgb[-1], 2),
+        "RandomForest": round(future_rf[-1], 2)
     })
 
-    # Plot
+    # Plot Historical and Forecasted Prices
     st.subheader(f"📊 Forecast for {stock}")
     plt.figure(figsize=(14, 7))
     sns.set_style("darkgrid")
     plt.plot(df.index, df['Close'], label=f'{stock} Historical', linewidth=2, color='black')
     plt.plot(df.index, df['MA_50'], label='50-Day MA', linestyle='dashed', color='blue')
     plt.plot(df.index, df['MA_200'], label='200-Day MA', linestyle='dashed', color='purple')
-    plt.plot(future_dates, future_xgb, label=f'{stock} Forecasted (XGBoost)', linestyle='dashed', color='red', marker='o')
-    plt.plot(future_dates, future_rf, label=f'{stock} Forecasted (Random Forest)', linestyle='dashed', color='green', marker='x')
+    plt.plot(future_dates, future_xgb, label='XGBoost Forecast', linestyle='dashed', color='red', marker='o')
+    plt.plot(future_dates, future_rf, label='RandomForest Forecast', linestyle='dashed', color='green', marker='x')
 
+    # Trend Line
     try:
         z = np.polyfit(range(len(df)), df['Close'].values.flatten(), 1)
         p = np.poly1d(z)
@@ -95,22 +107,20 @@ for stock in selected_stocks:
     except:
         st.warning(f"Trend line could not be plotted for {stock}.")
 
-    plt.legend(fontsize=12, loc='upper left', frameon=True, shadow=True, fancybox=True)
-    plt.title(f"Historical and Forecasted Prices for {stock}", fontsize=16, fontweight='bold')
-    plt.xlabel("Date", fontsize=14)
-    plt.ylabel("Close Price", fontsize=14)
-    plt.xticks(rotation=45, fontsize=12)
-    plt.yticks(fontsize=12)
-    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.legend(fontsize=12, loc='upper left')
+    plt.title(f"Historical and Forecasted Prices for {stock}", fontsize=16)
+    plt.xlabel("Date")
+    plt.ylabel("Close Price")
+    plt.xticks(rotation=45)
     st.pyplot(plt)
 
-# Forecast Table Display
+# 📊 Display Forecast Table
 if forecast_table:
     st.subheader("🔮 Forecasted Prices (Last Prediction)")
-    forecast_df = pd.DataFrame(forecast_table).set_index("Stock")
-    st.table(forecast_df)
+    forecast_df = pd.DataFrame(forecast_table)
+    st.table(forecast_df.set_index("Stock"))
 
-# Portfolio Optimization
+# 💸 Portfolio Optimization
 if forecasted_prices:
     risk_allocation = {1: 0.7, 2: 0.5, 3: 0.3}
     allocation = {}
@@ -138,21 +148,19 @@ if forecasted_prices:
 
     total_allocation = sum(allocation.values())
     allocation_percentage = {stock: round((amount / total_allocation) * 100, 2) for stock, amount in allocation.items()}
-
+    
+    # Adjust first stock to fix rounding
     total_percentage = sum(allocation_percentage.values())
     if total_percentage != 100:
         first_stock = next(iter(allocation_percentage))
         allocation_percentage[first_stock] += 100 - total_percentage
 
-    # Allocation Display
     st.subheader("💰 Optimized Stock Allocation")
     allocation_df = pd.DataFrame.from_dict(allocation, orient='index', columns=['Investment Amount (₹)'])
     allocation_df["Percentage (%)"] = allocation_df.index.map(lambda stock: allocation_percentage[stock])
     st.table(allocation_df)
 
-    # Risk Classification
     def classify_risk_level(volatility):
-        volatility = float(volatility)
         if volatility > 0.03:
             return "3 (High Risk)"
         elif 0.01 < volatility <= 0.03:
@@ -165,7 +173,6 @@ if forecasted_prices:
     st.subheader("⚠️ Risk Levels in Investment")
     st.table(risk_df)
 
-    # AI Trend Signals
     st.subheader("📢 AI Trend Predictions")
     trend_df = pd.DataFrame.from_dict(trend_signals, orient='index', columns=['Trend Signal'])
     st.table(trend_df)
