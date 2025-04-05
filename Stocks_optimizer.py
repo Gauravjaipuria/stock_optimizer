@@ -64,9 +64,11 @@ for stock in selected_stocks:
 
     # Calculate Volatility
     volatilities[stock] = float(np.std(df['Close'].pct_change().dropna()))
+
+    # ⬇️ Round forecasted prices to 2 decimal places
     forecasted_prices[stock] = {
-    "XGBoost": round(future_xgb[-1], 2),
-    "RandomForest": round(future_rf[-1], 2)
+        "XGBoost": round(future_xgb[-1], 2),
+        "RandomForest": round(future_rf[-1], 2)
     }
 
     # Plot Historical and Forecasted Prices
@@ -92,9 +94,9 @@ for stock in selected_stocks:
 if forecasted_prices:
     weights = np.array([1 / len(forecasted_prices)] * len(forecasted_prices))  # Equal weight distribution
     weights = weights / np.sum(weights)  # Normalize to ensure sum is 100%
-    
+
     allocation = {stock: investment_amount * weight for stock, weight in zip(forecasted_prices.keys(), weights)}
-    
+
     # Convert allocation to percentage
     allocation_df = pd.DataFrame.from_dict(allocation, orient='index', columns=['Investment Amount (₹)'])
     allocation_df['Percentage Allocation (%)'] = (allocation_df['Investment Amount (₹)'] / investment_amount) * 100
