@@ -8,4 +8,4 @@ numpy
 xgboost
 scikit-learn
 pandas_ta
-setuptools
+fpdf
