@@ -122,19 +122,6 @@ risk_tiers = {s: "3 (High Risk)" if vol > 0.03 else "2 (Medium Risk)" if vol > 0
 risk_df = pd.DataFrame.from_dict(risk_tiers, orient='index', columns=['Risk Level'])
 st.dataframe(risk_df)
 
-# Backtest Chart
-st.subheader("📆 Backtest: Actual vs Predicted")
-for stock in actual_vs_predicted:
-    actual, xgb_pred, rf_pred = actual_vs_predicted[stock]
-    plt.figure(figsize=(10, 5))
-    plt.plot(actual.index, actual, label='Actual', color='black')
-    plt.plot(actual.index, xgb_pred, label='XGBoost', color='red')
-    plt.plot(actual.index, rf_pred, label='Random Forest', color='green')
-    plt.title(f"{stock} - Backtest Forecast Accuracy")
-    plt.legend()
-    st.pyplot(plt.gcf())
-    plt.close()
-
 # Sharpe Ratio
 st.subheader("📉 Sharpe Ratio & Return Forecast")
 sharpe_rows = []
@@ -149,27 +136,4 @@ for stock in stock_list:
 
 sharpe_df = pd.DataFrame(sharpe_rows, columns=['Stock', 'Annual Return', 'Annual Volatility', 'Sharpe Ratio'])
 st.dataframe(sharpe_df.set_index('Stock'))
-
-# Portfolio Growth Chart
-st.subheader("📈 Portfolio Value Growth Over Forecast Period")
-portfolio_value = pd.Series(0.0, index=pd.date_range(pd.Timestamp.today(), periods=forecast_days, freq='B'))
-
-for stock, amount in allocation.items():
-    if stock in forecasted_prices:
-        if stock in actual_vs_predicted:
-            last_price = actual_vs_predicted[stock][0].iloc[-1]
-        else:
-            last_price = yf.download(stock, period="5d", interval="1d", auto_adjust=True)['Close'].iloc[-1]
-        shares = amount / last_price
-        predicted_series = pd.Series([forecasted_prices[stock]['XGBoost']] * forecast_days, index=portfolio_value.index)
-        portfolio_value += shares * predicted_series
-
-plt.figure(figsize=(12, 6))
-plt.plot(portfolio_value.index, portfolio_value.values, color='blue')
-plt.title("Estimated Portfolio Value Over Time (XGBoost Forecast)")
-plt.xlabel("Date")
-plt.ylabel("Portfolio Value (₹)")
-plt.grid(True)
-st.pyplot(plt.gcf())
-plt.close()
 
