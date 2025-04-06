@@ -150,26 +150,31 @@ for stock in stock_list:
 sharpe_df = pd.DataFrame(sharpe_rows, columns=['Stock', 'Annual Return', 'Annual Volatility', 'Sharpe Ratio'])
 st.dataframe(sharpe_df.set_index('Stock'))
 
-# Downloadable PDF
-if st.button("📥 Download Portfolio Report (PDF)"):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, txt="AI-Powered Stock Portfolio Optimizer Report", ln=True, align='C')
+# Portfolio Value Growth Chart
+st.subheader("📈 Portfolio Value Growth Over Forecast Period")
 
-    pdf.cell(200, 10, txt="Optimized Allocation:", ln=True)
-    for index, row in alloc_df.iterrows():
-        amt = f"{row['Investment Amount (₹)']:.2f}"
-        pdf.cell(200, 10, txt=f"{index}: ₹{amt} ({row['Percentage Allocation (%)']}%)", ln=True)
+portfolio_growth = []
+dates = pd.date_range(pd.Timestamp.today(), periods=forecast_days, freq='B')
 
-    pdf.cell(200, 10, txt="\nTrend Predictions:", ln=True)
-    for index, row in trend_df.iterrows():
-        pdf.cell(200, 10, txt=f"{index}: {row['Trend Signal']}", ln=True)
+# Initialize portfolio value each day
+daily_values = pd.Series(0, index=dates)
 
-    pdf.cell(200, 10, txt="\nForecasted Prices:", ln=True)
-    for index, row in forecast_df.iterrows():
-        pdf.cell(200, 10, txt=f"{index}: XGBoost: {row['XGBoost']:.2f}, RF: {row['RandomForest']:.2f}", ln=True)
+for stock, amount in allocation.items():
+    if stock in forecasted_prices:
+        future_prices = np.array([forecasted_prices[stock]['XGBoost']] * forecast_days)
+        if stock in actual_vs_predicted:
+            last_price = actual_vs_predicted[stock][0].iloc[-1]
+        else:
+            last_price = yf.download(stock, period="5d", interval="1d", auto_adjust=True)['Close'].iloc[-1]
 
-    pdf_output = io.BytesIO()
-    pdf.output(pdf_output, dest='F')
-    st.download_button(label="Download PDF Report", data=pdf_output.getvalue(), file_name="portfolio_report.pdf", mime='application/pdf')
+        shares = amount / last_price
+        daily_values += shares * future_prices
+
+plt.figure(figsize=(12, 6))
+plt.plot(daily_values.index, daily_values.values, color='blue')
+plt.title("Estimated Portfolio Value Over Time (XGBoost Forecast)")
+plt.xlabel("Date")
+plt.ylabel("Portfolio Value (₹)")
+plt.grid(True)
+st.pyplot(plt.gcf())
+plt.close()
