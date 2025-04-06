@@ -78,7 +78,7 @@ for stock in stock_list:
     plt.plot(future_dates, future_xgb, label="XGBoost Forecast", linestyle='--', color='red')
     plt.plot(future_dates, future_rf, label="RF Forecast", linestyle='--', color='green')
     plt.legend()
-    plt.title(f"{stock} Price Forecast with MAs")
+    plt.title(f"{stock} Price Forecast")
     st.pyplot(plt.gcf())
     plt.close()
 
@@ -111,7 +111,7 @@ st.subheader("📢 AI Trend Predictions")
 trend_df = pd.DataFrame.from_dict(trend_signals, orient='index', columns=['Trend Signal'])
 st.dataframe(trend_df)
 
-st.subheader("🧠 Forecasted Prices (Last Prediction)")
+st.subheader("🧠 Forecasted Prices")
 forecast_df = pd.DataFrame.from_dict(forecasted_prices, orient='index')
 st.dataframe(forecast_df)
 
