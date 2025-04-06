@@ -8,7 +8,7 @@ from xgboost import XGBRegressor
 from sklearn.ensemble import RandomForestRegressor
 
 # Streamlit UI
-st.title("📈 AI-Powered Stock Portfolio Optimizer")
+st.title("\ud83d\udcc8 AI-Powered Stock Portfolio Optimizer")
 
 # User Inputs
 country = st.radio("Select Market:", ["India", "Other"])
@@ -17,7 +17,7 @@ selected_stocks = [stock.strip() + ".NS" if country == "India" else stock.strip(
 
 years_to_use = st.number_input("Enter number of years for historical data:", min_value=1, max_value=10, value=2)
 forecast_days = st.number_input("Enter forecast period (in days):", min_value=1, max_value=365, value=30)
-investment_amount = st.number_input("Enter total investment amount (₹):", min_value=1000.0, value=50000.0)
+investment_amount = st.number_input("Enter total investment amount (\u20b9):", min_value=1000.0, value=50000.0)
 risk_profile = st.radio("Select your risk level:", [1, 2, 3], format_func=lambda x: {1: "Low", 2: "Medium", 3: "High"}[x])
 
 # Initialize Storage
@@ -35,6 +35,7 @@ for stock in selected_stocks:
         st.warning(f"Skipping {stock}: No valid data available.")
         continue
 
+    # Fetch today's price
     try:
         today_df = yf.download(stock, period="1d", interval="1d", auto_adjust=True)
         latest_price = today_df['Close'].iloc[-1]
@@ -45,17 +46,14 @@ for stock in selected_stocks:
 
     df = df[['Close']]
     df.dropna(inplace=True)
-
     future_dates = pd.date_range(df.index[-1], periods=forecast_days + 1, freq='B')[1:]
 
-    # Calculate Moving Averages
+    # Moving Averages
     df['MA_50'] = df['Close'].rolling(window=50).mean()
     df['MA_200'] = df['Close'].rolling(window=200).mean()
 
-    if df['MA_50'].iloc[-1] > df['MA_200'].iloc[-1]:
-        trend_signals[stock] = "Bullish 🟢 (Buy)"
-    else:
-        trend_signals[stock] = "Bearish 🔴 (Sell)"
+    # Trend Prediction
+    trend_signals[stock] = "Bullish \ud83d\udfe2 (Buy)" if df['MA_50'].iloc[-1] > df['MA_200'].iloc[-1] else "Bearish \ud83d\udd34 (Sell)"
 
     # Feature Engineering
     df['Lag_1'] = df['Close'].shift(1)
@@ -75,10 +73,7 @@ for stock in selected_stocks:
     future_rf = [rf_model.predict(np.array([[df['Lag_1'].iloc[-1]]]).reshape(1, -1))[0] for _ in range(forecast_days)]
 
     volatilities[stock] = float(np.std(df['Close'].pct_change().dropna()))
-    forecasted_prices[stock] = {
-        "XGBoost": future_xgb[-1],
-        "RandomForest": future_rf[-1]
-    }
+    forecasted_prices[stock] = {"XGBoost": future_xgb[-1], "RandomForest": future_rf[-1]}
 
     forecast_table.append({
         "Stock": stock.replace(".NS", ""),
@@ -87,8 +82,8 @@ for stock in selected_stocks:
         "RandomForest": round(future_rf[-1], 2)
     })
 
-    # Plot Historical and Forecasted Prices
-    st.subheader(f"📊 Forecast for {stock}")
+    # Plot
+    st.subheader(f"\ud83d\udcca Forecast for {stock}")
     plt.figure(figsize=(14, 7))
     sns.set_style("darkgrid")
     plt.plot(df.index, df['Close'], label=f'{stock} Historical', linewidth=2, color='black')
@@ -111,78 +106,72 @@ for stock in selected_stocks:
     plt.xticks(rotation=45)
     st.pyplot(plt)
 
-# 📊 Display Forecast Table
+# Display Forecast Table
 if forecast_table:
-    st.subheader("🔮 Forecasted Prices (Last Prediction)")
+    st.subheader("\ud83d\udd2e Forecasted Prices (Last Prediction)")
     forecast_df = pd.DataFrame(forecast_table)
     st.table(forecast_df.set_index("Stock"))
 
-# 💸 Portfolio Optimization
+# Diversified Risk Allocation
 if forecasted_prices:
-    risk_allocation = {1: 0.7, 2: 0.5, 3: 0.3}
-    allocation = {}
-    safe_stocks = []
-    risky_stocks = []
+    risk_splits = {
+        1: {"Low": 0.7, "Medium": 0.2, "High": 0.1},
+        2: {"Low": 0.3, "Medium": 0.4, "High": 0.3},
+        3: {"Low": 0.1, "Medium": 0.2, "High": 0.7},
+    }
 
-    # ✅ Adaptive volatility threshold
-    vol_threshold = np.median(list(volatilities.values()))
+    risk_buckets = {"Low": [], "Medium": [], "High": []}
 
     for stock, vol in volatilities.items():
-        if vol > vol_threshold:
-            risky_stocks.append(stock)
+        if vol > 0.03:
+            risk_buckets["High"].append(stock)
+        elif vol > 0.01:
+            risk_buckets["Medium"].append(stock)
         else:
-            safe_stocks.append(stock)
+            risk_buckets["Low"].append(stock)
 
-    # Calculate allocation based on client profile
-    risky_allocation = investment_amount * risk_allocation[risk_profile]
-    safe_allocation = investment_amount - risky_allocation
+    allocation = {}
+    remaining_amount = investment_amount
+    splits = risk_splits[risk_profile]
 
-    # 🔄 Fallback logic if any group is empty
-    if not risky_stocks:
-        safe_allocation = investment_amount
-        risky_allocation = 0
-    if not safe_stocks:
-        risky_allocation = investment_amount
-        safe_allocation = 0
+    for level, percent in splits.items():
+        stocks = risk_buckets[level]
+        amount_for_level = investment_amount * percent
 
-    # Final Allocation
-    if risky_stocks:
-        per_risky_stock = risky_allocation / len(risky_stocks)
-        for stock in risky_stocks:
-            allocation[stock] = per_risky_stock
+        if stocks:
+            per_stock = amount_for_level / len(stocks)
+            for stock in stocks:
+                allocation[stock] = allocation.get(stock, 0) + per_stock
+        else:
+            remaining_amount += amount_for_level
 
-    if safe_stocks:
-        per_safe_stock = safe_allocation / len(safe_stocks)
-        for stock in safe_stocks:
-            allocation[stock] = per_safe_stock
+    if remaining_amount > 0 and allocation:
+        per_stock_extra = remaining_amount / len(allocation)
+        for stock in allocation:
+            allocation[stock] += per_stock_extra
 
-    total_allocation = sum(allocation.values())
-    allocation_percentage = {stock: round((amount / total_allocation) * 100, 2) for stock, amount in allocation.items()}
+    total_alloc = sum(allocation.values())
+    allocation_percentage = {stock: round((amt / total_alloc) * 100, 2) for stock, amt in allocation.items()}
 
-    # Fix rounding issue
-    total_percentage = sum(allocation_percentage.values())
-    if total_percentage != 100:
+    total_pct = sum(allocation_percentage.values())
+    if total_pct != 100:
         first_stock = next(iter(allocation_percentage))
-        allocation_percentage[first_stock] += 100 - total_percentage
+        allocation_percentage[first_stock] += 100 - total_pct
 
-    st.subheader("💰 Optimized Stock Allocation")
-    allocation_df = pd.DataFrame.from_dict(allocation, orient='index', columns=['Investment Amount (₹)'])
-    allocation_df["Percentage (%)"] = allocation_df.index.map(lambda stock: allocation_percentage[stock])
-    st.table(allocation_df)
+    st.subheader("\ud83d\udcb0 Diversified Allocation by Risk Profile")
+    alloc_df = pd.DataFrame.from_dict(allocation, orient='index', columns=['Investment Amount (\u20b9)'])
+    alloc_df["Allocation (%)"] = alloc_df.index.map(lambda stock: allocation_percentage[stock])
+    st.table(alloc_df)
 
-    def classify_risk_level(volatility):
-        if volatility > 0.03:
-            return "3 (High Risk)"
-        elif 0.01 < volatility <= 0.03:
-            return "2 (Medium Risk)"
-        else:
-            return "1 (Low Risk)"
+    risk_levels = {}
+    for level, stocks in risk_buckets.items():
+        for stock in stocks:
+            risk_levels[stock] = f"{level} Risk"
 
-    risk_levels = {stock: classify_risk_level(vol) for stock, vol in volatilities.items()}
     risk_df = pd.DataFrame.from_dict(risk_levels, orient='index', columns=['Risk Level'])
-    st.subheader("⚠️ Risk Levels in Investment")
+    st.subheader("\u26a0\ufe0f Stock Risk Classification")
     st.table(risk_df)
 
-    st.subheader("📢 AI Trend Predictions")
+    st.subheader("\ud83d\udce2 AI Trend Predictions")
     trend_df = pd.DataFrame.from_dict(trend_signals, orient='index', columns=['Trend Signal'])
     st.table(trend_df)
