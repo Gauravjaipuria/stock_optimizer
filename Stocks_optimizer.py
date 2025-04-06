@@ -173,26 +173,3 @@ plt.grid(True)
 st.pyplot(plt.gcf())
 plt.close()
 
-# Downloadable PDF
-if st.button("📥 Download Portfolio Report (PDF)"):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, txt="AI-Powered Stock Portfolio Optimizer Report", ln=True, align='C')
-
-    pdf.cell(200, 10, txt="Optimized Allocation:", ln=True)
-    for index, row in alloc_df.iterrows():
-        amt = f"{row['Investment Amount (₹)']:.2f}"
-        pdf.cell(200, 10, txt=f"{index}: ₹{amt} ({row['Percentage Allocation (%)']}%)", ln=True)
-
-    pdf.cell(200, 10, txt="\nTrend Predictions:", ln=True)
-    for index, row in trend_df.iterrows():
-        pdf.cell(200, 10, txt=f"{index}: {row['Trend Signal']}", ln=True)
-
-    pdf.cell(200, 10, txt="\nForecasted Prices:", ln=True)
-    for index, row in forecast_df.iterrows():
-        pdf.cell(200, 10, txt=f"{index}: XGBoost: {row['XGBoost']:.2f}, RF: {row['RandomForest']:.2f}", ln=True)
-
-    pdf_output = io.BytesIO()
-    pdf.output(pdf_output, dest='F')
-    st.download_button(label="Download PDF Report", data=pdf_output.getvalue(), file_name="portfolio_report.pdf", mime='application/pdf')
