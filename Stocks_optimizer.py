@@ -44,7 +44,7 @@ for stock in stock_list:
     df = df[['Close']].dropna()
     df['MA_50'] = df['Close'].rolling(window=50).mean()
     df['MA_200'] = df['Close'].rolling(window=200).mean()
-    trend_signals[stock] = "Bullish 🟢 (Buy)" if df['MA_50'].iloc[-1] > df['MA_200'].iloc[-1] else "Bearish 🔴 (Sell)"
+    trend_signals[stock] = "Bullish (Buy)" if df['MA_50'].iloc[-1] > df['MA_200'].iloc[-1] else "Bearish (Sell)"
 
     df['Lag_1'] = df['Close'].shift(1)
     df.dropna(inplace=True)
@@ -157,9 +157,10 @@ if st.button("📥 Download Portfolio Report (PDF)"):
     pdf.set_font("Arial", size=12)
     pdf.cell(200, 10, txt="AI-Powered Stock Portfolio Optimizer Report", ln=True, align='C')
 
-    pdf.cell(200, 10, txt="\nOptimized Allocation:", ln=True)
+    pdf.cell(200, 10, txt="Optimized Allocation:", ln=True)
     for index, row in alloc_df.iterrows():
-        pdf.cell(200, 10, txt=f"{index}: ₹{row['Investment Amount (₹)']:.2f} ({row['Percentage Allocation (%)']}%)", ln=True)
+        amt = f"{row['Investment Amount (₹)']:.2f}".replace("₹", "Rs.")
+        pdf.cell(200, 10, txt=f"{index}: Rs. {amt} ({row['Percentage Allocation (%)']}%)", ln=True)
 
     pdf.cell(200, 10, txt="\nTrend Predictions:", ln=True)
     for index, row in trend_df.iterrows():
@@ -171,4 +172,4 @@ if st.button("📥 Download Portfolio Report (PDF)"):
 
     pdf_output = io.BytesIO()
     pdf.output(pdf_output)
-    st.download_button(label="📄 Download PDF", data=pdf_output.getvalue(), file_name="portfolio_report.pdf", mime='application/pdf')
+    st.download_button(label="Download PDF Report", data=pdf_output.getvalue(), file_name="portfolio_report.pdf", mime='application/pdf')
