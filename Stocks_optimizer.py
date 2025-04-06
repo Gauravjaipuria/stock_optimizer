@@ -9,6 +9,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 import base64
 import io
+from fpdf import FPDF
 
 st.set_page_config(page_title="AI-Powered Stock Portfolio Optimizer", layout="wide")
 st.title("📊 AI-Powered Stock Portfolio Optimizer")
@@ -78,7 +79,7 @@ for stock in stock_list:
     plt.plot(future_dates, future_xgb, label="XGBoost Forecast", linestyle='--', color='red')
     plt.plot(future_dates, future_rf, label="RF Forecast", linestyle='--', color='green')
     plt.legend()
-    plt.title(f"{stock} Price Forecast")
+    plt.title(f"{stock} Price Forecast with MAs")
     st.pyplot(plt.gcf())
     plt.close()
 
@@ -111,7 +112,7 @@ st.subheader("📢 AI Trend Predictions")
 trend_df = pd.DataFrame.from_dict(trend_signals, orient='index', columns=['Trend Signal'])
 st.dataframe(trend_df)
 
-st.subheader("🧠 Forecasted Prices")
+st.subheader("🧠 Forecasted Prices (Last Prediction)")
 forecast_df = pd.DataFrame.from_dict(forecasted_prices, orient='index')
 st.dataframe(forecast_df)
 
@@ -148,3 +149,26 @@ for stock in stock_list:
 
 sharpe_df = pd.DataFrame(sharpe_rows, columns=['Stock', 'Annual Return', 'Annual Volatility', 'Sharpe Ratio'])
 st.dataframe(sharpe_df.set_index('Stock'))
+
+# Downloadable PDF
+if st.button("📥 Download Portfolio Report (PDF)"):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, txt="AI-Powered Stock Portfolio Optimizer Report", ln=True, align='C')
+
+    pdf.cell(200, 10, txt="\nOptimized Allocation:", ln=True)
+    for index, row in alloc_df.iterrows():
+        pdf.cell(200, 10, txt=f"{index}: ₹{row['Investment Amount (₹)']:.2f} ({row['Percentage Allocation (%)']}%)", ln=True)
+
+    pdf.cell(200, 10, txt="\nTrend Predictions:", ln=True)
+    for index, row in trend_df.iterrows():
+        pdf.cell(200, 10, txt=f"{index}: {row['Trend Signal']}", ln=True)
+
+    pdf.cell(200, 10, txt="\nForecasted Prices:", ln=True)
+    for index, row in forecast_df.iterrows():
+        pdf.cell(200, 10, txt=f"{index}: XGBoost: {row['XGBoost']:.2f}, RF: {row['RandomForest']:.2f}", ln=True)
+
+    pdf_output = io.BytesIO()
+    pdf.output(pdf_output)
+    st.download_button(label="📄 Download PDF", data=pdf_output.getvalue(), file_name="portfolio_report.pdf", mime='application/pdf')
