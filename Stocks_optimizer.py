@@ -8,7 +8,7 @@ from xgboost import XGBRegressor
 from sklearn.ensemble import RandomForestRegressor
 
 # Streamlit UI
-st.title("\ud83d\udcc8 AI-Powered Stock Portfolio Optimizer")
+st.title("\U0001F4C8 AI-Powered Stock Portfolio Optimizer")
 
 # User Inputs
 country = st.radio("Select Market:", ["India", "Other"])
@@ -17,7 +17,7 @@ selected_stocks = [stock.strip() + ".NS" if country == "India" else stock.strip(
 
 years_to_use = st.number_input("Enter number of years for historical data:", min_value=1, max_value=10, value=2)
 forecast_days = st.number_input("Enter forecast period (in days):", min_value=1, max_value=365, value=30)
-investment_amount = st.number_input("Enter total investment amount (\u20b9):", min_value=1000.0, value=50000.0)
+investment_amount = st.number_input("Enter total investment amount (₹):", min_value=1000.0, value=50000.0)
 risk_profile = st.radio("Select your risk level:", [1, 2, 3], format_func=lambda x: {1: "Low", 2: "Medium", 3: "High"}[x])
 
 # Initialize Storage
@@ -35,7 +35,6 @@ for stock in selected_stocks:
         st.warning(f"Skipping {stock}: No valid data available.")
         continue
 
-    # Fetch today's price
     try:
         today_df = yf.download(stock, period="1d", interval="1d", auto_adjust=True)
         latest_price = today_df['Close'].iloc[-1]
@@ -48,26 +47,21 @@ for stock in selected_stocks:
     df.dropna(inplace=True)
     future_dates = pd.date_range(df.index[-1], periods=forecast_days + 1, freq='B')[1:]
 
-    # Moving Averages
     df['MA_50'] = df['Close'].rolling(window=50).mean()
     df['MA_200'] = df['Close'].rolling(window=200).mean()
 
-    # Trend Prediction
-    trend_signals[stock] = "Bullish \ud83d\udfe2 (Buy)" if df['MA_50'].iloc[-1] > df['MA_200'].iloc[-1] else "Bearish \ud83d\udd34 (Sell)"
+    trend_signals[stock] = "Bullish \U0001F7E2 (Buy)" if df['MA_50'].iloc[-1] > df['MA_200'].iloc[-1] else "Bearish \U0001F534 (Sell)"
 
-    # Feature Engineering
     df['Lag_1'] = df['Close'].shift(1)
     df.dropna(inplace=True)
 
     train_size = int(len(df) * 0.8)
     train, test = df.iloc[:train_size], df.iloc[train_size:]
 
-    # XGBoost Model
     xgb_model = XGBRegressor(objective='reg:squarederror', n_estimators=100)
     xgb_model.fit(train[['Lag_1']], train['Close'])
     future_xgb = [xgb_model.predict(np.array([[df['Lag_1'].iloc[-1]]]).reshape(1, -1))[0] for _ in range(forecast_days)]
 
-    # Random Forest Model
     rf_model = RandomForestRegressor(n_estimators=100)
     rf_model.fit(train[['Lag_1']], train['Close'])
     future_rf = [rf_model.predict(np.array([[df['Lag_1'].iloc[-1]]]).reshape(1, -1))[0] for _ in range(forecast_days)]
@@ -82,8 +76,7 @@ for stock in selected_stocks:
         "RandomForest": round(future_rf[-1], 2)
     })
 
-    # Plot
-    st.subheader(f"\ud83d\udcca Forecast for {stock}")
+    st.subheader(f"\U0001F4CA Forecast for {stock}")
     plt.figure(figsize=(14, 7))
     sns.set_style("darkgrid")
     plt.plot(df.index, df['Close'], label=f'{stock} Historical', linewidth=2, color='black')
@@ -106,13 +99,11 @@ for stock in selected_stocks:
     plt.xticks(rotation=45)
     st.pyplot(plt)
 
-# Display Forecast Table
 if forecast_table:
-    st.subheader("\ud83d\udd2e Forecasted Prices (Last Prediction)")
+    st.subheader("\U0001F52E Forecasted Prices (Last Prediction)")
     forecast_df = pd.DataFrame(forecast_table)
     st.table(forecast_df.set_index("Stock"))
 
-# Diversified Risk Allocation
 if forecasted_prices:
     risk_splits = {
         1: {"Low": 0.7, "Medium": 0.2, "High": 0.1},
@@ -131,8 +122,8 @@ if forecasted_prices:
             risk_buckets["Low"].append(stock)
 
     allocation = {}
-    remaining_amount = investment_amount
     splits = risk_splits[risk_profile]
+    unallocated_amount = 0
 
     for level, percent in splits.items():
         stocks = risk_buckets[level]
@@ -143,23 +134,27 @@ if forecasted_prices:
             for stock in stocks:
                 allocation[stock] = allocation.get(stock, 0) + per_stock
         else:
-            remaining_amount += amount_for_level
+            unallocated_amount += amount_for_level
 
-    if remaining_amount > 0 and allocation:
-        per_stock_extra = remaining_amount / len(allocation)
-        for stock in allocation:
-            allocation[stock] += per_stock_extra
+    if unallocated_amount > 0:
+        eligible_stocks = []
+        for level, percent in splits.items():
+            eligible_stocks.extend(risk_buckets[level])
+        if eligible_stocks:
+            extra_per_stock = unallocated_amount / len(eligible_stocks)
+            for stock in eligible_stocks:
+                allocation[stock] += extra_per_stock
 
     total_alloc = sum(allocation.values())
     allocation_percentage = {stock: round((amt / total_alloc) * 100, 2) for stock, amt in allocation.items()}
 
-    total_pct = sum(allocation_percentage.values())
-    if total_pct != 100:
+    diff = 100 - sum(allocation_percentage.values())
+    if abs(diff) > 0:
         first_stock = next(iter(allocation_percentage))
-        allocation_percentage[first_stock] += 100 - total_pct
+        allocation_percentage[first_stock] += diff
 
-    st.subheader("\ud83d\udcb0 Diversified Allocation by Risk Profile")
-    alloc_df = pd.DataFrame.from_dict(allocation, orient='index', columns=['Investment Amount (\u20b9)'])
+    st.subheader("\U0001F4B0 Diversified Allocation by Risk Profile")
+    alloc_df = pd.DataFrame.from_dict(allocation, orient='index', columns=['Investment Amount (₹)'])
     alloc_df["Allocation (%)"] = alloc_df.index.map(lambda stock: allocation_percentage[stock])
     st.table(alloc_df)
 
@@ -169,9 +164,9 @@ if forecasted_prices:
             risk_levels[stock] = f"{level} Risk"
 
     risk_df = pd.DataFrame.from_dict(risk_levels, orient='index', columns=['Risk Level'])
-    st.subheader("\u26a0\ufe0f Stock Risk Classification")
+    st.subheader("\u26A0\ufe0f Stock Risk Classification")
     st.table(risk_df)
 
-    st.subheader("\ud83d\udce2 AI Trend Predictions")
+    st.subheader("\U0001F4E2 AI Trend Predictions")
     trend_df = pd.DataFrame.from_dict(trend_signals, orient='index', columns=['Trend Signal'])
     st.table(trend_df)
