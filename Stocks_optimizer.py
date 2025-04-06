@@ -35,7 +35,6 @@ for stock in selected_stocks:
         st.warning(f"Skipping {stock}: No valid data available.")
         continue
 
-    # Fetch today's price
     try:
         today_df = yf.download(stock, period="1d", interval="1d", auto_adjust=True)
         latest_price = today_df['Close'].iloc[-1]
@@ -53,7 +52,6 @@ for stock in selected_stocks:
     df['MA_50'] = df['Close'].rolling(window=50).mean()
     df['MA_200'] = df['Close'].rolling(window=200).mean()
 
-    # AI Trend Prediction
     if df['MA_50'].iloc[-1] > df['MA_200'].iloc[-1]:
         trend_signals[stock] = "Bullish 🟢 (Buy)"
     else:
@@ -99,7 +97,6 @@ for stock in selected_stocks:
     plt.plot(future_dates, future_xgb, label='XGBoost Forecast', linestyle='dashed', color='red', marker='o')
     plt.plot(future_dates, future_rf, label='RandomForest Forecast', linestyle='dashed', color='green', marker='x')
 
-    # Trend Line
     try:
         z = np.polyfit(range(len(df)), df['Close'].values.flatten(), 1)
         p = np.poly1d(z)
@@ -127,15 +124,28 @@ if forecasted_prices:
     safe_stocks = []
     risky_stocks = []
 
+    # ✅ Adaptive volatility threshold
+    vol_threshold = np.median(list(volatilities.values()))
+
     for stock, vol in volatilities.items():
-        if vol > 0.03:
+        if vol > vol_threshold:
             risky_stocks.append(stock)
         else:
             safe_stocks.append(stock)
 
+    # Calculate allocation based on client profile
     risky_allocation = investment_amount * risk_allocation[risk_profile]
     safe_allocation = investment_amount - risky_allocation
 
+    # 🔄 Fallback logic if any group is empty
+    if not risky_stocks:
+        safe_allocation = investment_amount
+        risky_allocation = 0
+    if not safe_stocks:
+        risky_allocation = investment_amount
+        safe_allocation = 0
+
+    # Final Allocation
     if risky_stocks:
         per_risky_stock = risky_allocation / len(risky_stocks)
         for stock in risky_stocks:
@@ -148,8 +158,8 @@ if forecasted_prices:
 
     total_allocation = sum(allocation.values())
     allocation_percentage = {stock: round((amount / total_allocation) * 100, 2) for stock, amount in allocation.items()}
-    
-    # Adjust first stock to fix rounding
+
+    # Fix rounding issue
     total_percentage = sum(allocation_percentage.values())
     if total_percentage != 100:
         first_stock = next(iter(allocation_percentage))
