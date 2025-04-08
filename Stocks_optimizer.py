@@ -10,7 +10,7 @@ st.set_page_config(page_title="AI-Powered Stock Portfolio Optimizer", layout="wi
 st.title("📊 AI-Powered Stock Portfolio Optimizer")
 
 # Sidebar inputs
-country = st.sidebar.selectbox("Market", ["India", "America"])
+country = st.sidebar.selectbox("Market", ["India", "other"])
 stocks = st.sidebar.text_input("Enter Stock Symbols (comma-separated)", "BPCL, RITES")
 years = st.sidebar.slider("Years of Historical Data", 1, 10, 3)
 forecast_days = st.sidebar.slider("Forecast Period (Days)", 30, 365, 90)
