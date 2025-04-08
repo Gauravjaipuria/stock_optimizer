@@ -103,55 +103,40 @@ st.dataframe(risk_classification_df)
 
 st.subheader("💸 Portfolio Allocation Based on Risk")
 
-# Risk-to-allocation % mapping
-risk_allocation = {
-    1: 0.3,  # Low risk: max 30% in risky
-    2: 0.5,  # Medium risk: balanced
-    3: 0.7   # High risk: max 70% in risky
-}
-
-# Determine safe and risky stocks
-safe_stocks = []
-risky_stocks = []
-
-if risk_level == 1:
-    safe_stocks = low_risk
-    risky_stocks = medium_risk + high_risk
-elif risk_level == 2:
-    safe_stocks = low_risk
-    risky_stocks = medium_risk + high_risk
-elif risk_level == 3:
-    safe_stocks = low_risk + medium_risk
-    risky_stocks = high_risk
-
 allocation = {}
 
-# Handle full allocation cases
-if not risky_stocks:
-    st.info("All stocks are safe. Allocating 100% to safe stocks.")
-    per_stock = investment / len(safe_stocks)
-    for stock in safe_stocks:
+# If all stocks fall under one risk category, allocate full investment there
+if len(low_risk) == len(volatilities):
+    per_stock = investment / len(low_risk)
+    for stock in low_risk:
         allocation[stock] = per_stock
-elif not safe_stocks:
-    st.warning("All stocks are risky. Allocating 100% to risky stocks.")
-    per_stock = investment / len(risky_stocks)
-    for stock in risky_stocks:
+elif len(medium_risk) == len(volatilities):
+    per_stock = investment / len(medium_risk)
+    for stock in medium_risk:
+        allocation[stock] = per_stock
+elif len(high_risk) == len(volatilities):
+    per_stock = investment / len(high_risk)
+    for stock in high_risk:
         allocation[stock] = per_stock
 else:
-    risky_invest = investment * risk_allocation[risk_level]
-    safe_invest = investment - risky_invest
+    risk_allocation = {1: 0.7, 2: 0.5, 3: 0.3}
+    risky_allocation = investment * risk_allocation[risk_level]
+    safe_allocation = investment - risky_allocation
+
+    safe_stocks = low_risk + medium_risk if risk_level == 3 else low_risk
+    risky_stocks = high_risk if risk_level == 3 else medium_risk + high_risk
 
     if risky_stocks:
-        per_risky = risky_invest / len(risky_stocks)
+        per_risky_stock = risky_allocation / len(risky_stocks)
         for stock in risky_stocks:
-            allocation[stock] = per_risky
+            allocation[stock] = per_risky_stock
 
     if safe_stocks:
-        per_safe = safe_invest / len(safe_stocks)
+        per_safe_stock = safe_allocation / len(safe_stocks)
         for stock in safe_stocks:
-            allocation[stock] = per_safe
+            allocation[stock] = per_safe_stock
 
-# Calculate allocation percentages
+# Calculate total allocation and percentage
 total_allocation = sum(allocation.values())
 alloc_percent = {stock: round((amount / total_allocation) * 100, 2) for stock, amount in allocation.items()}
 
