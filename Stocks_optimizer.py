@@ -81,35 +81,26 @@ for stock in stock_list:
     st.pyplot(plt.gcf())
     plt.close()
 
-# Risk-based allocation
+# ✅ Fixed allocation logic
+allocation = {}
 risky_stocks = [s for s in volatilities if volatilities[s] > 0.03]
 safe_stocks = [s for s in volatilities if s not in risky_stocks]
-risk_alloc_pct = {1: 0.7, 2: 0.5, 3: 0.3}[risk_level]
 
-# ✅ FIXED Allocation Logic
-allocation = {}
+risk_alloc_pct = {1: 0.7, 2: 0.5, 3: 0.3}[risk_level]
+risky_amt = investment * risk_alloc_pct
+safe_amt = investment - risky_amt
 
 if risky_stocks and safe_stocks:
-    risky_amt = investment * risk_alloc_pct
-    safe_amt = investment - risky_amt
-
     per_risky = risky_amt / len(risky_stocks)
     per_safe = safe_amt / len(safe_stocks)
-
     for s in risky_stocks:
         allocation[s] = per_risky
     for s in safe_stocks:
         allocation[s] = per_safe
-
-elif risky_stocks:
-    per_risky = investment / len(risky_stocks)
-    for s in risky_stocks:
-        allocation[s] = per_risky
-
-elif safe_stocks:
-    per_safe = investment / len(safe_stocks)
-    for s in safe_stocks:
-        allocation[s] = per_safe
+else:
+    per_stock = investment / len(volatilities)
+    for s in volatilities:
+        allocation[s] = per_stock
 
 # Calculate percent allocation
 total_alloc = sum(allocation.values())
