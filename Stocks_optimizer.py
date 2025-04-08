@@ -90,6 +90,17 @@ risk_alloc_pct = {1: 0.7, 2: 0.5, 3: 0.3}[risk_level]
 risky_amt = investment * risk_alloc_pct
 safe_amt = investment - risky_amt
 
+# Handle empty safe/risky cases
+if not risky_stocks:
+    risky_allocation = 0
+    safe_allocation = investment_amount
+elif not safe_stocks:
+    safe_allocation = 0
+    risky_allocation = investment_amount
+else:
+    risky_allocation = investment_amount * risk_allocation[risk_profile]
+    safe_allocation = investment_amount - risky_allocation
+
 if risky_stocks and safe_stocks:
     per_risky = risky_amt / len(risky_stocks)
     per_safe = safe_amt / len(safe_stocks)
