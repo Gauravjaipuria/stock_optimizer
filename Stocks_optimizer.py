@@ -81,6 +81,26 @@ for stock in stock_list:
     st.pyplot(plt.gcf())
     plt.close()
 
+# Classify risk levels
+low_risk = []
+medium_risk = []
+high_risk = []
+
+for stock, vol in volatilities.items():
+    if vol <= 0.01:
+        low_risk.append(stock)
+    elif vol <= 0.03:
+        medium_risk.append(stock)
+    else:
+        high_risk.append(stock)
+
+st.subheader("🔍 Stock Risk Classification")
+risk_classification_df = pd.DataFrame({
+    "Stock": low_risk + medium_risk + high_risk,
+    "Risk Category": (["Low"] * len(low_risk)) + (["Medium"] * len(medium_risk)) + (["High"] * len(high_risk))
+})
+st.dataframe(risk_classification_df)
+
 st.subheader("💸 Portfolio Allocation Based on Risk")
 
 allocation = {}
@@ -99,7 +119,6 @@ elif len(high_risk) == len(volatilities):
     for stock in high_risk:
         allocation[stock] = per_stock
 else:
-    # Mixed Risk Portfolio
     risk_allocation = {1: 0.7, 2: 0.5, 3: 0.3}
     risky_allocation = investment * risk_allocation[risk_level]
     safe_allocation = investment - risky_allocation
@@ -107,22 +126,19 @@ else:
     safe_stocks = low_risk + medium_risk if risk_level == 3 else low_risk
     risky_stocks = high_risk if risk_level == 3 else medium_risk + high_risk
 
-    # Allocate to risky stocks
     if risky_stocks:
         per_risky_stock = risky_allocation / len(risky_stocks)
         for stock in risky_stocks:
             allocation[stock] = per_risky_stock
 
-    # Allocate to safe stocks
     if safe_stocks:
         per_safe_stock = safe_allocation / len(safe_stocks)
         for stock in safe_stocks:
             allocation[stock] = per_safe_stock
 
-
 # Calculate total allocation and percentage
 total_allocation = sum(allocation.values())
-allocation_percentage = {stock: round((amount / total_allocation) * 100, 2) for stock, amount in allocation.items()}
+alloc_percent = {stock: round((amount / total_allocation) * 100, 2) for stock, amount in allocation.items()}
 
 # Display Allocation
 st.subheader("💰 Optimized Stock Allocation (100% Distributed)")
@@ -136,7 +152,7 @@ trend_df = pd.DataFrame.from_dict(trend_signals, orient='index', columns=['Trend
 st.dataframe(trend_df)
 
 # Forecast Table
-st.subheader("🧠 Forecasted Prices (Last Prediction)")
+st.subheader("🧐 Forecasted Prices (Last Prediction)")
 forecast_df = pd.DataFrame.from_dict(forecasted_prices, orient='index')
 st.dataframe(forecast_df)
 
