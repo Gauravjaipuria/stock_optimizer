@@ -119,11 +119,11 @@ elif len(high_risk) == len(volatilities):
     for stock in high_risk:
         allocation[stock] = per_stock
 else:
-    if risk_profile = "Low":
+    if risk_profile == "Low":
         risk_allocation = {1: 0.7, 2: 0.5, 3: 0.3}
         risky_allocation = investment * risk_allocation[risk_level]
         safe_allocation = investment - risky_allocation
-    elif risk_profile = "Medium":  
+    elif risk_profile == "Medium":  
         risk_allocation = {1: 0.5, 2: 0.7, 3: 0.3}
         risky_allocation = investment * risk_allocation[risk_level]
         safe_allocation = investment - risky_allocation
