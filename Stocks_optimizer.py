@@ -5,6 +5,7 @@ import yfinance as yf
 import matplotlib.pyplot as plt
 from xgboost import XGBRegressor
 from sklearn.ensemble import RandomForestRegressor
+from ta.momentum import RSIIndicator
 
 st.set_page_config(page_title="AI-Powered Stock Portfolio Optimizer", layout="wide")
 st.title("📊 AI-Powered Stock Portfolio Optimizer")
@@ -81,6 +82,34 @@ for stock in stock_list:
     st.pyplot(plt.gcf())
     plt.close()
 
+# RSI Analysis
+st.subheader("📈 RSI Analysis (Relative Strength Index)")
+rsi_signals = []
+for stock in stock_list:
+    df_rsi = yf.download(stock, period=f"{years}y", interval="1d", auto_adjust=True)
+    close_series = df_rsi['Close'].squeeze()
+    if isinstance(close_series, pd.DataFrame):
+        close_series = close_series.iloc[:, 0]
+    rsi = RSIIndicator(close=close_series, window=14).rsi()
+
+    latest_rsi = rsi.iloc[-1]
+
+    if latest_rsi < 30:
+        signal = "Oversold (Buy)"
+    elif latest_rsi > 70:
+        signal = "Overbought (Sell)"
+    else:
+        signal = "Neutral"
+
+    rsi_signals.append({
+        "Stock": stock,
+        "RSI": round(latest_rsi, 2),
+        "Signal": signal
+    })
+
+rsi_df = pd.DataFrame(rsi_signals)
+st.dataframe(rsi_df)
+
 # Classify risk levels
 low_risk = []
 medium_risk = []
@@ -105,7 +134,6 @@ st.subheader("💸 Portfolio Allocation Based on Risk")
 
 allocation = {}
 
-# If all stocks fall under one risk category, allocate full investment there
 if len(low_risk) == len(volatilities):
     per_stock = investment / len(low_risk)
     for stock in low_risk:
@@ -122,7 +150,7 @@ else:
     risk_allocation = {1: 0.3, 2: 0.5, 3: 0.7}
     risky_allocation = investment * risk_allocation[risk_level]
     safe_allocation = investment - risky_allocation
-        
+
     safe_stocks = low_risk + medium_risk if risk_level == 3 else low_risk
     risky_stocks = high_risk if risk_level == 3 else medium_risk + high_risk
 
