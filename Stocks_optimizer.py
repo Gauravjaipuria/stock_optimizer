@@ -37,7 +37,7 @@ actual_vs_predicted = {}
 # Process each stock
 for stock in stock_list:
     df = yf.download(stock, period=f"{years}y", interval="1d", auto_adjust=True)
-    if df.empty or ('Close' not in df.columns) or (df['Close'].isnull().all()):
+    if df.empty or ('Close' not in df.columns) or df['Close'].isnull().all():
         st.warning(f"Skipping {stock} due to lack of data.")
         continue
 
