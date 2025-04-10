@@ -18,14 +18,21 @@ forecast_days = st.sidebar.slider("Forecast Period (Days)", 30, 365, 90)
 investment = st.sidebar.number_input("Total Investment (₹)", value=50000.0)
 risk_profile = st.sidebar.selectbox("Risk Profile", ["Low", "Medium", "High"])
 
-# Risk level mapping
 risk_map = {"Low": 1, "Medium": 2, "High": 3}
 risk_level = risk_map[risk_profile]
 
-# Prepare stock list
 stock_list = [s.strip().upper() + ".NS" if country == "India" else s.strip().upper() for s in stocks.split(",")]
 
-# Initialize containers
+# Forecasting helper
+def recursive_forecast(model, last_value, days):
+    predictions = []
+    current_input = last_value
+    for _ in range(days):
+        pred = model.predict([[current_input]])[0]
+        predictions.append(pred)
+        current_input = pred
+    return predictions
+
 forecasted_prices = {}
 volatilities = {}
 trend_signals = {}
@@ -33,7 +40,6 @@ rf_forecasts = {}
 xgb_forecasts = {}
 actual_vs_predicted = {}
 
-# Process each stock
 for stock in stock_list:
     df = yf.download(stock, period=f"{years}y", interval="1d", auto_adjust=True)
     if df.empty:
@@ -51,16 +57,17 @@ for stock in stock_list:
     train_size = int(len(df) * 0.8)
     train, test = df.iloc[:train_size], df.iloc[train_size:]
 
-    # Models
+    # XGBoost
     xgb_model = XGBRegressor(objective='reg:squarederror', n_estimators=100)
     xgb_model.fit(train[['Lag_1']], train['Close'])
     xgb_pred = xgb_model.predict(test[['Lag_1']])
-    future_xgb = [xgb_model.predict([[df['Lag_1'].iloc[-1]]])[0] for _ in range(forecast_days)]
+    future_xgb = recursive_forecast(xgb_model, df['Lag_1'].iloc[-1], forecast_days)
 
+    # Random Forest
     rf_model = RandomForestRegressor(n_estimators=100)
     rf_model.fit(train[['Lag_1']], train['Close'])
     rf_pred = rf_model.predict(test[['Lag_1']])
-    future_rf = [rf_model.predict([[df['Lag_1'].iloc[-1]]])[0] for _ in range(forecast_days)]
+    future_rf = recursive_forecast(rf_model, df['Lag_1'].iloc[-1], forecast_days)
 
     # Store results
     xgb_forecasts[stock] = xgb_pred[-1]
@@ -91,7 +98,6 @@ for stock in stock_list:
     if isinstance(close_series, pd.DataFrame):
         close_series = close_series.iloc[:, 0]
     rsi = RSIIndicator(close=close_series, window=14).rsi()
-
     latest_rsi = rsi.iloc[-1]
 
     if latest_rsi < 30:
@@ -111,10 +117,7 @@ rsi_df = pd.DataFrame(rsi_signals)
 st.dataframe(rsi_df)
 
 # Classify risk levels
-low_risk = []
-medium_risk = []
-high_risk = []
-
+low_risk, medium_risk, high_risk = [], [], []
 for stock, vol in volatilities.items():
     if vol <= 0.01:
         low_risk.append(stock)
@@ -130,10 +133,9 @@ risk_classification_df = pd.DataFrame({
 })
 st.dataframe(risk_classification_df)
 
+# Portfolio allocation
 st.subheader("💸 Portfolio Allocation Based on Risk")
-
 allocation = {}
-
 if len(low_risk) == len(volatilities):
     per_stock = investment / len(low_risk)
     for stock in low_risk:
@@ -164,33 +166,35 @@ else:
         for stock in safe_stocks:
             allocation[stock] = per_safe_stock
 
-# Calculate total allocation and percentage
+# Show allocation
 total_allocation = sum(allocation.values())
 alloc_percent = {stock: round((amount / total_allocation) * 100, 2) for stock, amount in allocation.items()}
 
-# Display Allocation
 st.subheader("💰 Optimized Stock Allocation (100% Distributed)")
 alloc_df = pd.DataFrame.from_dict(allocation, orient='index', columns=['Investment Amount (₹)'])
 alloc_df['Percentage Allocation (%)'] = alloc_df.index.map(lambda s: alloc_percent[s])
 st.dataframe(alloc_df)
 
-# Trend Signals
+# Trend predictions
 st.subheader("📢 AI Trend Predictions")
 trend_df = pd.DataFrame.from_dict(trend_signals, orient='index', columns=['Trend Signal'])
 st.dataframe(trend_df)
 
-# Forecast Table
+# Forecasted prices
 st.subheader("🧐 Forecasted Prices (Last Prediction)")
 forecast_df = pd.DataFrame.from_dict(forecasted_prices, orient='index')
 st.dataframe(forecast_df)
 
-# Risk Levels
+# Risk level tags
 st.subheader("⚠️ Risk Levels in Investment")
-risk_tiers = {s: "3 (High Risk)" if vol > 0.03 else "2 (Medium Risk)" if vol > 0.01 else "1 (Low Risk)" for s, vol in volatilities.items()}
+risk_tiers = {
+    s: "3 (High Risk)" if vol > 0.03 else "2 (Medium Risk)" if vol > 0.01 else "1 (Low Risk)"
+    for s, vol in volatilities.items()
+}
 risk_df = pd.DataFrame.from_dict(risk_tiers, orient='index', columns=['Risk Level'])
 st.dataframe(risk_df)
 
-# Sharpe Ratio & Returns
+# Sharpe Ratio
 st.subheader("📉 Sharpe Ratio & Return Forecast")
 sharpe_rows = []
 risk_free_rate = 0.05
