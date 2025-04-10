@@ -18,14 +18,11 @@ forecast_days = st.sidebar.slider("Forecast Period (Days)", 30, 365, 90)
 investment = st.sidebar.number_input("Total Investment (₹)", value=50000.0)
 risk_profile = st.sidebar.selectbox("Risk Profile", ["Low", "Medium", "High"])
 
-# Risk level mapping
 risk_map = {"Low": 1, "Medium": 2, "High": 3}
 risk_level = risk_map[risk_profile]
 
-# Prepare stock list
 stock_list = [s.strip().upper() + ".NS" if country == "India" else s.strip().upper() for s in stocks.split(",")]
 
-# Initialize containers
 forecasted_prices = {}
 volatilities = {}
 trend_signals = {}
@@ -33,7 +30,6 @@ rf_forecasts = {}
 xgb_forecasts = {}
 actual_vs_predicted = {}
 
-# Process each stock
 for stock in stock_list:
     df = yf.download(stock, period=f"{years}y", interval="1d", auto_adjust=True)
     if df.empty:
@@ -51,16 +47,29 @@ for stock in stock_list:
     train_size = int(len(df) * 0.8)
     train, test = df.iloc[:train_size], df.iloc[train_size:]
 
-    # Models
+    # Train models
     xgb_model = XGBRegressor(objective='reg:squarederror', n_estimators=100)
     xgb_model.fit(train[['Lag_1']], train['Close'])
     xgb_pred = xgb_model.predict(test[['Lag_1']])
-    future_xgb = [xgb_model.predict([[df['Lag_1'].iloc[-1]]])[0] for _ in range(forecast_days)]
 
     rf_model = RandomForestRegressor(n_estimators=100)
     rf_model.fit(train[['Lag_1']], train['Close'])
     rf_pred = rf_model.predict(test[['Lag_1']])
-    future_rf = [rf_model.predict([[df['Lag_1'].iloc[-1]]])[0] for _ in range(forecast_days)]
+
+    # Iterative forecasting fix
+    future_xgb = []
+    last_xgb_input = df['Lag_1'].iloc[-1]
+    for _ in range(forecast_days):
+        next_xgb = xgb_model.predict([[last_xgb_input]])[0]
+        future_xgb.append(next_xgb)
+        last_xgb_input = next_xgb
+
+    future_rf = []
+    last_rf_input = df['Lag_1'].iloc[-1]
+    for _ in range(forecast_days):
+        next_rf = rf_model.predict([[last_rf_input]])[0]
+        future_rf.append(next_rf)
+        last_rf_input = next_rf
 
     # Store results
     xgb_forecasts[stock] = xgb_pred[-1]
@@ -130,8 +139,8 @@ risk_classification_df = pd.DataFrame({
 })
 st.dataframe(risk_classification_df)
 
+# Portfolio allocation
 st.subheader("💸 Portfolio Allocation Based on Risk")
-
 allocation = {}
 
 if len(low_risk) == len(volatilities):
@@ -164,11 +173,9 @@ else:
         for stock in safe_stocks:
             allocation[stock] = per_safe_stock
 
-# Calculate total allocation and percentage
 total_allocation = sum(allocation.values())
 alloc_percent = {stock: round((amount / total_allocation) * 100, 2) for stock, amount in allocation.items()}
 
-# Display Allocation
 st.subheader("💰 Optimized Stock Allocation (100% Distributed)")
 alloc_df = pd.DataFrame.from_dict(allocation, orient='index', columns=['Investment Amount (₹)'])
 alloc_df['Percentage Allocation (%)'] = alloc_df.index.map(lambda s: alloc_percent[s])
