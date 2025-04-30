@@ -8,7 +8,7 @@ from sklearn.ensemble import RandomForestRegressor
 from ta.momentum import RSIIndicator
 
 st.set_page_config(page_title="AI-Powered Stock Portfolio Optimizer", layout="wide")
-st.title("\ud83d\udcca AI-Powered Stock Portfolio Optimizer")
+st.title("📊 AI-Powered Stock Portfolio Optimizer")
 
 # Sidebar inputs
 country = st.sidebar.selectbox("Market", ["India", "other"])
