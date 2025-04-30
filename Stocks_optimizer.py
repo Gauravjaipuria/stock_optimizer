@@ -93,7 +93,7 @@ for stock in stock_list:
     plt.close()
 
 # RSI Analysis
-st.subheader("\ud83d\udcc8 RSI Analysis (Relative Strength Index)")
+st.subheader("📈 RSI Analysis (Relative Strength Index)")
 rsi_signals = []
 for stock in stock_list:
     df_rsi = yf.download(stock, period=f"{years}y", interval="1d", auto_adjust=True)
